@@ -79,13 +79,15 @@ class InstallTests(unittest.TestCase):
     def test_worker_commands_and_lead(self):
         self.configure()
         out = self.sh('make', 'worker', 'NAME=w1', 'KIND=codex', env={'DRY': '1', 'HERDR_ENV': '1'})
-        self.assertIn('--sandbox workspace-write', out); self.assertIn('--add-dir %s/.git' % self.proj, out)
+        self.assertIn('--sandbox workspace-write', out); self.assertNotIn('--add-dir', out)
         self.assertIn('network_access=true', out)
         self.assertIn('--permission-mode auto', self.sh('make', 'worker', 'NAME=w1', 'KIND=claude', env={'DRY': '1', 'HERDR_ENV': '1'}))
         self.assertIn('usage', self.sh('make', 'worker', 'NAME=w1', 'KIND=other', ok=False))
         out = self.sh('make', 'worker', 'NAME=w2', 'KIND=claude', env={'HERDR_ENV': '0', 'HERDR_PANE_ID': 'w9:p9'})
         self.assertIn('Not inside herdr', out)
-        self.assertIn('Lead: herdr pane w9:p9', open(self.proj + '-w2/TASK.md').read())
+        task = open(self.proj + '-w2/TASK.md').read()
+        self.assertIn('Lead: herdr pane w9:p9', task); self.assertIn('Agent: claude, model default', task)
+        self.assertIn('-m m1 -c model_reasoning_effort=low', self.sh('make', 'worker', 'NAME=w3', 'KIND=codex', 'MODEL=m1', 'EFFORT=low', env={'DRY': '1', 'HERDR_ENV': '1'}))
         self.sh('make', 'finish', 'NAME=w2')
 
     def test_deploy_refuses_without_service(self):
