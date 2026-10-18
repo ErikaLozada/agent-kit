@@ -76,6 +76,18 @@ class InstallTests(unittest.TestCase):
         self.write('tests/test_x.py', 'import unittest\nclass T(unittest.TestCase):\n    def test(self): self.fail("broken")\n')
         self.sh('git', 'add', 'tests'); self.assertIn('tests failed', self.sh('git', 'commit', '-qm', 'bad', ok=False))
 
+    def test_worker_commands_and_lead(self):
+        self.configure()
+        out = self.sh('make', 'worker', 'NAME=w1', 'KIND=codex', env={'DRY': '1', 'HERDR_ENV': '1'})
+        self.assertIn('--sandbox workspace-write', out); self.assertIn('--add-dir %s/.git' % self.proj, out)
+        self.assertIn('network_access=true', out)
+        self.assertIn('--permission-mode auto', self.sh('make', 'worker', 'NAME=w1', 'KIND=claude', env={'DRY': '1', 'HERDR_ENV': '1'}))
+        self.assertIn('usage', self.sh('make', 'worker', 'NAME=w1', 'KIND=other', ok=False))
+        out = self.sh('make', 'worker', 'NAME=w2', 'KIND=claude', env={'HERDR_ENV': '0', 'HERDR_PANE_ID': 'w9:p9'})
+        self.assertIn('Not inside herdr', out)
+        self.assertIn('Lead: herdr pane w9:p9', open(self.proj + '-w2/TASK.md').read())
+        self.sh('make', 'finish', 'NAME=w2')
+
     def test_deploy_refuses_without_service(self):
         self.assertIn('No SERVICE', self.sh('make', 'deploy', ok=False))
 

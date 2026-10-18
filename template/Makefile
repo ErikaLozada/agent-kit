@@ -1,5 +1,5 @@
 # Commands for people and agents alike; see AGENTS.md. Settings: agent-kit.conf.
-.PHONY: test report status deploy setup task finish
+.PHONY: test report status deploy setup task finish worker
 
 test:
 	@bash scripts/test.sh
@@ -22,3 +22,6 @@ task:
 
 finish:
 	@bash scripts/finish-task.sh "$(NAME)"
+
+worker:
+	@bash scripts/start-worker.sh "$(NAME)" "$(KIND)" "$(OWNER)"

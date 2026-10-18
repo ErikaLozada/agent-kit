@@ -17,10 +17,11 @@ Or ask any agent to set up a project: the `new-project` skill (linked into Claud
 | `AGENTS.md` | Instructions every harness reads: commands, how it runs, data rules, how agents coordinate, glossary. Project sections are TODOs to fill in |
 | `CLAUDE.md` | `@AGENTS.md`, so Claude Code reads the same file |
 | `agent-kit.conf` | The project's settings for the scripts: service, health URL, test command, worktree links, protected files |
-| `Makefile` | `test`, `status`, `deploy`, `task`, `finish`, `report`, `setup` |
+| `Makefile` | `test`, `status`, `deploy`, `task`, `worker`, `finish`, `report`, `setup` |
 | `scripts/test.sh` | `TEST_CMD`, or `unittest` and `node --test` on `tests/` |
 | `scripts/status.sh` | What is live; every worktree with its task, owner and uncommitted changes |
 | `scripts/deploy.sh` | Only a clean, tested `main`; restart, health check, deploy log |
+| `scripts/start-worker.sh` | `make worker`: task worktree, herdr pane and agent with bounded worker permissions |
 | `scripts/new-task.sh`, `finish-task.sh` | A worktree and branch per task, with links, a test port and `TASK.md`; removal once merged |
 | `scripts/watch-codex.py` | Fallback outside herdr: message a Codex session and get its reply. Uses no model. Inside herdr, `herdr agent prompt/read/start` is the default channel for Claude and Codex |
 | `.githooks/pre-commit` | Tests on every commit; refuses PROTECTED files unless `USER_OK=1` |
