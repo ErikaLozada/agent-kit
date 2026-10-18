@@ -41,6 +41,18 @@ TODO: what data exists, what is tracked in git, what only the user may change (l
 - Every commit names the agent that made it in a trailer, e.g. `Co-Authored-By: Claude <noreply@anthropic.com>` or `Co-Authored-By: Codex <noreply@openai.com>`.
 - Size parallel work to how fast the user can review it: start with two agents.
 
+## Choosing models (decided by the user, 2026-10-18)
+
+The lead (orchestrator) runs on Claude Opus 5.5, or a newer top Claude model as one is released. Workers are picked by task tier; `make worker NAME=x TIER=simple|medium|complex` applies the preset.
+
+| Tier | When | Worker |
+| --- | --- | --- |
+| simple | One small, mechanical change with an exact spec and no judgement: a rename, a copy edit, a config value, one function with given inputs and outputs | Codex `gpt-6-luna`, effort high |
+| medium | A feature or fix of up to a few hundred lines with a written contract, tests and lead review (the shelf-links tasks) | Claude Haiku 5.5, effort high (`claude-haiku-5-5`); Sonnet 5.5, effort medium (`claude-sonnet-5-5`) when speed matters or the spec is looser |
+| complex | Open design, unclear requirements, cross-cutting changes, or reasoning the contract can't pin down | Claude Opus 5.5, effort high (`claude-opus-5-5`) |
+
+Escalate on evidence: a worker that fails its tests twice, keeps asking QUESTION: about the spec, or whose review finds a correctness bug is restarted one tier up. Measured on replays of three tasks (docs/tasks/replays.md): Haiku 6/6, Sonnet 6/6, luna 6/7 (one small real bug on a medium task), sol 5/6.
+
 ## Conventions
 
 - Match the surrounding code. Small commits whose message says why. Commit finished work promptly.
