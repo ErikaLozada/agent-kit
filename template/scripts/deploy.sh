@@ -1,5 +1,6 @@
 #!/bin/bash
 # Deploys main to the live service: only a committed, tested tree, and logs what went live. Run with `make deploy`.
+{  # read the whole script before running any of it, so editing this file during a run cannot break that run
 set -e
 cd "$(dirname "$0")/.."
 . ./agent-kit.conf
@@ -16,3 +17,5 @@ fi
 line="$(date '+%Y-%m-%d %H:%M') $(git rev-parse --short HEAD) $(git log -1 --format=%s)"
 echo "$line" >> .deploys.log
 echo "Live: $line"
+exit
+}

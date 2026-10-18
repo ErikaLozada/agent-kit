@@ -1,5 +1,6 @@
 #!/bin/bash
 # What is live, and what every worktree is doing. Run with `make status`.
+{  # read the whole script before running any of it, so editing this file during a run cannot break that run
 cd "$(dirname "$0")/.."
 . ./agent-kit.conf
 
@@ -32,3 +33,5 @@ done
 
 echo
 echo "Other agent sessions: ListAgents in Claude Code; Codex sessions in ~/.codex/session_index.jsonl."
+exit
+}

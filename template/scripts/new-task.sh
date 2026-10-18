@@ -1,6 +1,7 @@
 #!/bin/bash
 # Starts a task in its own worktree and branch, beside this folder: make task NAME=fix-search [OWNER="Codex"]
 # Untracked files listed in LINKS (agent-kit.conf) are symlinked in; tracked ones come from the branch.
+{  # read the whole script before running any of it, so editing this file during a run cannot break that run
 set -e
 cd "$(dirname "$0")/.."
 . ./agent-kit.conf
@@ -43,3 +44,5 @@ ${TEST_SERVER//\{PORT\}/$PORT}
 ## Notes
 EOF
 echo "Task $NAME: $WT (branch $NAME, test port $PORT). Fill in TASK.md; finish with: make finish NAME=$NAME"
+exit
+}

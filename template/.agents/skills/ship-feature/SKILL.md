@@ -14,6 +14,6 @@ description: Take a change from idea to live in this project, safely alongside o
 5. **Build test-first where you can.** Add or change tests in `tests/`, then the code, matching the surrounding style. Check the change in the running app on your task's test port (`TASK.md`), never on the live service.
 6. **Check what it touches.** Write under Contracts in `TASK.md` anything other work depends on that you changed (data format, API, prompt, command), and tell the affected peers.
 7. **Commit** small commits whose message says why, with your agent trailer (`Co-Authored-By: ...`). The pre-commit hook runs the tests.
-8. **Review.** In Claude Code run `/code-review` on the branch; otherwise ask another agent or the user to read the diff. Fix what holds up.
+8. **Review.** In Claude Code run `/code-review` on the branch; otherwise ask another agent or the user to read the diff. Besides correctness, check for duplicated logic: new code should build on existing helpers rather than copy their rules into a second place, which tests cannot catch (the shelf-links reference re-implemented `engine.link()`). Fix what holds up.
 9. **Hand over.** If you are not the lead, tell the lead the branch is ready and stop. The lead commits any uncommitted Codex work in its worktree (with the Codex trailer) after review, then merges into `main`, runs `make deploy`, then `make finish NAME=<short-name>`.
 10. **Record.** New settled decisions go into `docs/decisions.md`. Tell the user what changed and what to check.
