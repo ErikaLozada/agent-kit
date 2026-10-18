@@ -25,8 +25,11 @@ TODO: what data exists, what is tracked in git, what only the user may change (l
 
 ## Working with other agents
 
-- Before starting: check for other sessions and `git status` / `make status`. Tell any peer which files you will change.
-- Reaching other agents: Claude sessions with `ListAgents` and `SendMessage`; a Codex session with `python3 scripts/watch-codex.py --send "..."` (run it in the background: it queues the message and prints Codex's reply when its turn ends; `--follow` keeps watching). Codex cannot message Claude, so it answers in its own session and in commits.
+- Before starting: check for other agents (`herdr agent list`) and `git status` / `make status`. Tell any peer which files you will change.
+- Agents run in herdr panes (check `HERDR_ENV=1`), and herdr is the default channel for Claude and Codex alike: `herdr agent list` (who is there, idle/working/blocked), `herdr agent prompt <name> "..." --wait` (send and wait for the turn to end), `herdr agent read <name>` (read its reply). Run `herdr --skill` once for the full guide.
+- Starting a worker: `make task NAME=x OWNER=y`, then `herdr pane split --current --direction right --cwd <worktree> --no-focus` and `herdr agent start <name> --kind codex|claude --pane <new pane>`. Workers appear in herdr's agent panel.
+- A worker waiting on an approval shows as `blocked`: tell the user which pane; never answer approvals on their behalf.
+- Outside herdr: Claude sessions with `ListAgents`/`SendMessage`; a Codex session with `python3 scripts/watch-codex.py --send "..."` (prints its reply when its turn ends).
 - Parallel work goes in its own worktree and branch, one per task (`make task`), with its own test port. Never use `git stash`.
 - One lead owns `main`, merges and `make deploy`. Others do not restart the live service.
 - Shared files have one writer at a time; name them in `TASK.md` and in the Data section above.

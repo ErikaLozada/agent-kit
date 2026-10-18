@@ -5,10 +5,10 @@ description: Take a change from idea to live in this project, safely alongside o
 
 # Ship a feature
 
-1. **Look around.** Run `git status` and `make status`, and check for other agent sessions (Claude: `ListAgents`; Codex: newest sessions in `~/.codex/session_index.jsonl`).
+1. **Look around.** Run `git status` and `make status`, and check for other agents with `herdr agent list`.
 2. **Pin down done.** Say in one or two sentences what done looks like and which requirement or decision it serves (see `AGENTS.md` and `docs/decisions.md`). If it changes a settled decision, ask the user first.
 3. **Isolate if anyone else is active.** `make task NAME=<short-name> OWNER=<you>`, work in the new folder, and fill in `TASK.md` (goal, files, contracts). Working alone, use `main` directly.
-4. **Announce.** Tell every active peer which files you will change: Claude with `SendMessage`, Codex with `python3 scripts/watch-codex.py --send "..."` (run in the background; it reports the reply).
+4. **Announce.** Tell every active peer which files you will change: `herdr agent prompt <name> "..." --wait`, then `herdr agent read <name>` for the reply (outside herdr: `SendMessage` for Claude, `scripts/watch-codex.py --send` for Codex).
 5. **Build test-first where you can.** Add or change tests in `tests/`, then the code, matching the surrounding style. Check the change in the running app on your task's test port (`TASK.md`), never on the live service.
 6. **Check what it touches.** Write under Contracts in `TASK.md` anything other work depends on that you changed (data format, API, prompt, command), and tell the affected peers.
 7. **Commit** small commits whose message says why, with your agent trailer (`Co-Authored-By: ...`). The pre-commit hook runs the tests.

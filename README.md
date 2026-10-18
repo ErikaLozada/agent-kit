@@ -22,7 +22,7 @@ Or ask any agent to set up a project: the `new-project` skill (linked into Claud
 | `scripts/status.sh` | What is live; every worktree with its task, owner and uncommitted changes |
 | `scripts/deploy.sh` | Only a clean, tested `main`; restart, health check, deploy log |
 | `scripts/new-task.sh`, `finish-task.sh` | A worktree and branch per task, with links, a test port and `TASK.md`; removal once merged |
-| `scripts/watch-codex.py` | Message a Codex session and get its reply (Codex can't message Claude). Uses no model |
+| `scripts/watch-codex.py` | Fallback outside herdr: message a Codex session and get its reply. Uses no model. Inside herdr, `herdr agent prompt/read/start` is the default channel for Claude and Codex |
 | `.githooks/pre-commit` | Tests on every commit; refuses PROTECTED files unless `USER_OK=1` |
 | `docs/decisions.md` | Append-only decision log |
 | `.agents/skills/ship-feature` | The change workflow; `.claude/skills` links to `.agents/skills` |
