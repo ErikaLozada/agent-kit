@@ -1,5 +1,5 @@
 #!/bin/bash
-# Starts a worker agent for a task: its worktree (make task), a herdr pane beside the caller, and the agent in it
+# Starts a worker agent for a task: its worktree (make task), its own herdr tab named after the task, and the agent in it
 # with the permissions the user chose for workers.
 #   make worker NAME=fix-search KIND=codex|claude [OWNER=...] [MODEL=...] [EFFORT=low|medium|high]   DRY=1 prints the commands
 # Codex: may write only its worktree, may use the network (local test server, herdr), asks for anything else; it cannot
@@ -34,11 +34,12 @@ if [ "${HERDR_ENV:-}" != 1 ]; then
   echo "Not inside herdr: start it yourself with:  cd $WT && $KIND ${ARGS[*]}"; exit 0
 fi
 if [ -n "$DRY" ]; then
-  echo "herdr pane split --current --direction right --cwd $WT --no-focus"
+  echo "herdr tab create --label $NAME --cwd $WT --no-focus"
   run herdr agent start "$NAME" --kind "$KIND" --pane '<new pane>' -- "${ARGS[@]}"; exit 0
 fi
-PANE="$(herdr pane split --current --direction right --cwd "$WT" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['pane']['pane_id'])")"
-herdr agent start "$NAME" --kind "$KIND" --pane "$PANE" --timeout 60000 -- "${ARGS[@]}" >/dev/null
+PANE="$(herdr tab create --label "$NAME" --cwd "$WT" --no-focus | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['root_pane']['pane_id'])")"
+herdr agent start "$NAME" --kind "$KIND" --pane "$PANE" --timeout 60000 -- "${ARGS[@]}" >/dev/null \
+  || echo "Worker $NAME started but is not ready: it may be waiting for an approval in pane $PANE"
 echo "Worker $NAME ($KIND) in pane $PANE, folder $WT. Brief it: herdr agent prompt $NAME \"...\" --wait"
 exit
 }
