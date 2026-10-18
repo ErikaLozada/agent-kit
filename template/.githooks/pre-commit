@@ -1,0 +1,17 @@
+#!/bin/bash
+# Turned on by `make setup`. Runs for every commit, whichever agent or person makes it.
+. ./agent-kit.conf
+
+if [ "$USER_OK" != 1 ]; then
+  for f in $PROTECTED; do
+    if git diff --cached --name-only | grep -qx "$f"; then
+      echo "pre-commit: $f is listed as PROTECTED in agent-kit.conf: only the user changes it."
+      echo "            If you are the user, commit again with: USER_OK=1 git commit ..."
+      exit 1
+    fi
+  done
+fi
+
+if ! out="$(bash scripts/test.sh 2>&1)"; then
+  echo "$out"; echo "pre-commit: tests failed; commit refused."; exit 1
+fi

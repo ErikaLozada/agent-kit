@@ -1,0 +1,4 @@
+# Per-worktree task record (make task); read by make status, never merged
+TASK.md
+# Deploy log (make deploy)
+.deploys.log
