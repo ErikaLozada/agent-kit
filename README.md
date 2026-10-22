@@ -9,8 +9,8 @@ bash <kit>/install.sh <projects folder>/my-project "My Project"
 bash <kit>/install.sh --link-skills      # once per machine: link skills/* into Claude, Codex and pi
 ```
 
-The kit lives at `~/lab/agent-kit` on omarchy (the original repo) and `~/Desktop/projects/agent-kit` on the Mac (a
-clone; `git pull`/`git push` against omarchy keep them in step).
+The main copy is the private GitHub repo `ErikaLozada/agent-kit`. Clones: `~/lab/agent-kit` on omarchy and
+`~/Desktop/projects/agent-kit` on the Mac; `git pull` and `git push` against GitHub keep them in step.
 
 ## Your own copy (from GitHub)
 
