@@ -29,7 +29,9 @@ run() { if [ -n "$DRY" ]; then printf '%q ' "$@"; echo; else "$@"; fi; }
 [ -d "$WT" ] || run bash scripts/new-task.sh "$NAME" "$OWNER"
 NOTE="; never commits: the lead reviews and commits"
 if [ -z "$DRY" ]; then                                      # awk + mv, not sed -i: GNU and BSD sed differ
-  awk -v lead="Lead: herdr pane ${HERDR_PANE_ID:-unknown} (report there; it reviews, commits and merges)" \
+  if [ -n "${HERDR_PANE_ID:-}" ]; then LEAD="herdr pane $HERDR_PANE_ID (report there"
+  else LEAD="the session that started you, not in herdr (report in your reply to it"; fi
+  awk -v lead="Lead: $LEAD; it reviews, commits and merges)" \
       -v agent="Agent: $KIND, model ${MODEL:-default}, effort ${EFFORT:-default}$NOTE" \
       'FNR == NR { if (/^Agent: /) has = 1; next }               # first pass: is there an Agent: line yet?
        /^Lead: / {print lead; next} /^Agent: / {print agent; next} {print}

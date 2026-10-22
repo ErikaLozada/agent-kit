@@ -101,6 +101,10 @@ class InstallTests(unittest.TestCase):
         task = open(self.proj + '-w2/TASK.md').read()
         self.assertEqual(task.count('\nLead: '), 1); self.assertIn('Lead: herdr pane w9:p8', task)
         self.assertEqual(task.count('\nAgent: '), 1); self.assertIn('Agent: codex', task)
+        self.sh('make', 'worker', 'NAME=w4', 'KIND=codex', env={'HERDR_ENV': '0', 'HERDR_PANE_ID': ''})     # no herdr at all
+        task = open(self.proj + '-w4/TASK.md').read()
+        self.assertIn('Lead: the session that started you', task); self.assertNotIn('herdr pane', task)
+        self.sh('make', 'finish', 'NAME=w4')
         self.assertIn('-m m1 -c model_reasoning_effort=low', self.sh('make', 'worker', 'NAME=w3', 'KIND=codex', 'MODEL=m1', 'EFFORT=low', env={'DRY': '1', 'HERDR_ENV': '1'}))
         self.sh('make', 'finish', 'NAME=w2')
 
