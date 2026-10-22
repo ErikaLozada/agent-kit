@@ -4,7 +4,11 @@
 cd "$(dirname "$0")/.."
 . ./agent-kit.conf
 
-if [ -n "$SERVICE" ]; then
+if [ -n "$SERVICE" ] && ! command -v systemctl >/dev/null; then
+  echo "LIVE"
+  echo "  service:     $SERVICE (status needs systemd: systemctl is not on this machine)"
+  echo
+elif [ -n "$SERVICE" ]; then
   echo "LIVE"
   echo "  service:     $SERVICE $(systemctl --user is-active "$SERVICE" 2>/dev/null) since $(systemctl --user show "$SERVICE" -p ActiveEnterTimestamp --value 2>/dev/null)"
   if [ -s .deploys.log ]; then

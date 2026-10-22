@@ -1,5 +1,5 @@
 """Installs the kit into a throwaway project and drives every command there, as an agent would."""
-import os, subprocess, tempfile, unittest
+import os, socket, subprocess, tempfile, unittest
 
 KIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 GIT_ENV = {'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 't@t', 'GIT_COMMITTER_NAME': 'Test', 'GIT_COMMITTER_EMAIL': 't@t'}
@@ -22,6 +22,16 @@ class InstallTests(unittest.TestCase):
     def write(self, rel, text):
         os.makedirs(os.path.dirname(os.path.join(self.proj, rel)) or self.proj, exist_ok=True)
         with open(os.path.join(self.proj, rel), 'w') as f: f.write(text)
+
+    def path_without(self, *names):
+        """A PATH holding links to every command on the current PATH except names, as on a machine without them."""
+        d = tempfile.mkdtemp(); self.addCleanup(subprocess.run, ['rm', '-rf', d])
+        for folder in os.environ['PATH'].split(os.pathsep):
+            if not os.path.isdir(folder): continue
+            for n in os.listdir(folder):
+                src, dst = os.path.join(folder, n), os.path.join(d, n)
+                if n not in names and not os.path.exists(dst) and os.access(src, os.X_OK): os.symlink(src, dst)
+        return d
 
     def configure(self):
         conf = self.read('agent-kit.conf')
@@ -89,6 +99,21 @@ class InstallTests(unittest.TestCase):
         self.assertIn('Lead: herdr pane w9:p9', task); self.assertIn('Agent: claude, model default', task)
         self.assertIn('-m m1 -c model_reasoning_effort=low', self.sh('make', 'worker', 'NAME=w3', 'KIND=codex', 'MODEL=m1', 'EFFORT=low', env={'DRY': '1', 'HERDR_ENV': '1'}))
         self.sh('make', 'finish', 'NAME=w2')
+
+    def test_task_skips_a_port_in_use(self):
+        self.configure()
+        with socket.socket() as busy:
+            busy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); busy.bind(('127.0.0.1', 8001)); busy.listen()
+            self.assertIn('test port 8002', self.sh('make', 'task', 'NAME=p1'))
+            path = self.path_without('ss')                  # the macOS case: lsof instead of ss
+            if not os.path.exists(os.path.join(path, 'lsof')): self.skipTest('no lsof here to test the fallback')
+            self.assertIn('test port 8003', self.sh('make', 'task', 'NAME=p2', env={'PATH': path}))
+
+    def test_service_without_systemd(self):
+        self.write('agent-kit.conf', self.read('agent-kit.conf').replace('SERVICE=""', 'SERVICE="app"'))
+        path = self.path_without('systemctl')
+        self.assertIn('status needs systemd', self.sh('make', 'status', env={'PATH': path}))
+        self.assertIn('no systemd', self.sh('make', 'deploy', ok=False, env={'PATH': path}))
 
     def test_deploy_refuses_without_service(self):
         self.assertIn('No SERVICE', self.sh('make', 'deploy', ok=False))

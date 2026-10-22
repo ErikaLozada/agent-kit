@@ -5,6 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 . ./agent-kit.conf
 [ -n "$SERVICE" ] || { echo "No SERVICE in agent-kit.conf: nothing to deploy."; exit 1; }
+command -v systemctl >/dev/null || { echo "Refusing: deploy restarts $SERVICE with systemctl --user, and this machine has no systemd."; exit 1; }
 
 if [ "$(git branch --show-current)" != main ]; then echo "Refusing: deploy from main, not $(git branch --show-current)."; exit 1; fi
 if [ -n "$(git status --porcelain)" ]; then echo "Refusing: uncommitted changes (the service runs this folder as it is):"; git status --short; exit 1; fi

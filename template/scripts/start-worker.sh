@@ -28,8 +28,12 @@ run() { if [ -n "$DRY" ]; then printf '%q ' "$@"; echo; else "$@"; fi; }
 
 [ -d "$WT" ] || run bash scripts/new-task.sh "$NAME" "$OWNER"
 NOTE="; never commits: the lead reviews and commits"
-[ -n "$DRY" ] || sed -i -e "s|^Lead: none.*|Lead: herdr pane ${HERDR_PANE_ID:-unknown} (report there; it merges and deploys)|" \
-  -e "s|^Owner: .*|&\nAgent: $KIND, model ${MODEL:-default}, effort ${EFFORT:-default}$NOTE|" "$WT/TASK.md"
+if [ -z "$DRY" ]; then                                      # awk + mv, not sed -i: GNU and BSD sed differ
+  awk -v lead="Lead: herdr pane ${HERDR_PANE_ID:-unknown} (report there; it merges and deploys)" \
+      -v agent="Agent: $KIND, model ${MODEL:-default}, effort ${EFFORT:-default}$NOTE" \
+      '/^Lead: none/ {print lead; next} {print} /^Owner: / {print agent}' "$WT/TASK.md" > "$WT/TASK.md.tmp"
+  mv "$WT/TASK.md.tmp" "$WT/TASK.md"
+fi
 if [ "${HERDR_ENV:-}" != 1 ]; then
   echo "Not inside herdr: start it yourself with:  cd $WT && $KIND ${ARGS[*]}"; exit 0
 fi

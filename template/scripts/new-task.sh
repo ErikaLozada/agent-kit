@@ -19,7 +19,12 @@ for f in $LINKS; do
 done
 
 used="$(cat "$(dirname "$MAIN")"/"$(basename "$MAIN")"-*/TASK.md 2>/dev/null | sed -n 's/^Port: *//p')"
-PORT="${TEST_PORT:-8001}"; while echo "$used" | grep -qx "$PORT" || ss -ltn 2>/dev/null | grep -q ":$PORT "; do PORT=$((PORT+1)); done
+listening() {                                               # ss on Linux, lsof on macOS; neither: assume free
+  if command -v ss >/dev/null; then ss -ltn | grep -q ":$1 "
+  elif command -v lsof >/dev/null; then lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else return 1; fi
+}
+PORT="${TEST_PORT:-8001}"; while echo "$used" | grep -qx "$PORT" || listening "$PORT"; do PORT=$((PORT+1)); done
 
 cat > "$WT/TASK.md" <<EOF
 # Task: $NAME
