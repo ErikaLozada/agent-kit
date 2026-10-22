@@ -115,6 +115,22 @@ class InstallTests(unittest.TestCase):
         self.assertIn('status needs systemd', self.sh('make', 'status', env={'PATH': path}))
         self.assertIn('no systemd', self.sh('make', 'deploy', ok=False, env={'PATH': path}))
 
+    def test_link_skills(self):
+        home = tempfile.mkdtemp(); self.addCleanup(subprocess.run, ['rm', '-rf', home])
+        claude, agents = os.path.join(home, '.claude', 'skills'), os.path.join(home, '.agents', 'skills')
+        os.makedirs(claude); os.makedirs(os.path.join(agents, 'new-project'))          # a real folder: kept
+        os.symlink('/elsewhere/ship-with-agents', os.path.join(agents, 'ship-with-agents'))  # a foreign link: kept
+        run = lambda: self.sh('bash', os.path.join(KIT, 'install.sh'), '--link-skills', cwd=home, env={'HOME': home})
+        out = run()
+        kit_skills = os.path.realpath(os.path.join(KIT, 'skills'))
+        for name in ('new-project', 'ship-with-agents'):
+            self.assertEqual(os.readlink(os.path.join(claude, name)), os.path.join(kit_skills, name))
+        self.assertTrue(os.path.isdir(os.path.join(agents, 'new-project')) and not os.path.islink(os.path.join(agents, 'new-project')))
+        self.assertEqual(os.readlink(os.path.join(agents, 'ship-with-agents')), '/elsewhere/ship-with-agents')
+        self.assertIn('kept', out); self.assertFalse(os.path.exists(os.path.join(home, '.pi')))
+        self.assertFalse(os.path.exists(os.path.join(home, '--link-skills')))
+        self.assertNotIn('added', run())                                                # a rerun changes nothing
+
     def test_deploy_refuses_without_service(self):
         self.assertIn('No SERVICE', self.sh('make', 'deploy', ok=False))
 
