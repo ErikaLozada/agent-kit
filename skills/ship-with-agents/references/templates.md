@@ -56,13 +56,15 @@ Acceptance: <measurable checks>.
 ## Worker brief
 
 ```
-You are a helper agent for task <X> in the <project> repo (this folder). Read <plan file>: the section 'Rules for
-every task' and task <X>, plus the findings it cites in <review file>. Do task <X> only, editing only the files it
-owns. Test in <scratch>, delete it when done; never run <...>; do not run the lead-only checks; do not commit.
-<Any dependency note, e.g. exact signature another task calls.> When finished, write review/task-<x>.md (what changed
-with file:line, how you tested it, anything you could not verify, and any acceptance check you did not meet, with the
-numbers) and reply with one line: [task-<x>] DONE. Start every message to the lead with [task-<x>]. If you need a
-decision, write it in the report and reply [task-<x>] BLOCKED <one line>.
+[lead] You are a helper agent for task <X> in the <project> repo (this folder). Read <plan file, or TASK.md in an
+agent-kit worktree>: the rules for every task and task <X>, plus the findings it cites in <review file>. Do task <X>
+only, editing only the files it owns. Test in <scratch folder / your worktree and test port>, delete scratch files
+when done; never run <...>; do not run the lead-only checks; never commit (the lead reviews and commits).
+<Any dependency note, e.g. exact signature another task calls.> When finished, write your report (what changed with
+file:line, how you tested it, anything you could not verify, and any acceptance check you did not meet, with the
+numbers) in <TASK.md under ## Report / review/task-<x>.md>, and reply with one line: [task-<x>] READY. Start every
+message to the lead with [task-<x>]. If you need a decision, write it in the report and reply
+[task-<x>] BLOCKED <one line>.
 ```
 
 ## Re-review brief (round 2+)

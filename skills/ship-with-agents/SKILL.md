@@ -8,9 +8,11 @@ description: Lead a team of agents (Claude and Codex, any mix) to ship a feature
 You are the **lead**. You plan, brief, watch, check and commit; workers do the edits; a **reviewer**, ideally from
 another provider (Codex when the workers are Claude), finds problems and checks the fixes. The user makes the decisions.
 
-**If you are a worker** (your brief names a lead and a task): read the brief and the plan file it points to, do only your
-task, edit only the files it owns, follow its test rules, don't commit, write your report file, then reply with one
-line, e.g. `DONE task B`. If you are blocked on a decision, write it in the report and stop instead of guessing.
+**If you are a worker** (your brief or `TASK.md` names a lead): read the brief and the plan file or `TASK.md` it
+points to, do only your task, edit only the files it owns, follow its test rules, and **never commit** (Claude or
+Codex alike: the lead reviews and commits). Write your report (in `TASK.md` under `## Report` when the task has one,
+else the report file the brief names), then reply with one line, `[<your name>] READY`. If you are blocked on a
+decision, write it in the report and reply `[<your name>] BLOCKED <one line>` instead of guessing.
 
 Recipes for starting and reading agents (herdr, the Agent tool, `codex exec`) are in `references/backends.md`.
 Brief, plan and report templates are in `references/templates.md`.
@@ -24,6 +26,9 @@ Brief, plan and report templates are in `references/templates.md`.
 - Find the project's own commands instead of inventing them: `Makefile`/`justfile` targets, `package.json` scripts,
   `pyproject.toml`/`tox.ini`, scripts named in the README or CLAUDE.md. Note: test, lint/type check, build, run, deploy.
   If there are no tests, find what stands in for them (a check script, a byte-identical output comparison, a dry run).
+- **agent-kit projects** (an `agent-kit.conf` at the root) usually have `make test/status/task/worker/finish/deploy`,
+  a pre-commit hook that runs the tests, and `PROTECTED` files only the user changes. Projects adapt their copies, so
+  read the actual `Makefile` and `scripts/` before relying on a target; use only the ones that are there.
 - Pick the backend (`references/backends.md`): herdr if `HERDR_ENV=1` or `herdr` is on PATH, else the Agent tool.
   Check whether `codex` is installed for a cross-provider reviewer. Check for other active agents (`herdr agent list`)
   and avoid the files they own.
@@ -60,7 +65,8 @@ template:
 - **Model per task** by tier: *simple* (exact spec, no judgement: a rename, one function) to Codex or the smallest
   Claude; *medium* (a contained fix with a written contract and tests) to Haiku or Sonnet; *complex* (open design,
   cross-cutting, concurrency) to Opus. Move a worker up one tier on evidence: tests failed twice, keeps asking about
-  the spec, or shipped a correctness bug. Show the user the table of task → agent → model before starting.
+  the spec, or shipped a correctness bug. If the project's `AGENTS.md` has a model table (agent-kit projects do), it
+  wins. Show the user the table of task → agent → model before starting.
 - **Lead-only work**: checks over shared outputs (full test suite, regenerating shared artifacts, comparisons on real
   data) are run by you at the end, so two workers never rebuild the same thing at once.
 
@@ -68,15 +74,21 @@ Isolation: use a worktree per task when everything the task needs is tracked in 
 with strict file ownership and per-task scratch folders, and say which you chose. Isolate **side effects**, not just
 code: a worktree still shares real data, accounts, tokens and services, so every worker test runs with the project's
 dry-run switches, its own test port and its own data/history files, and tests mock the network.
+Size the team to how fast the user can review: start with two workers and add more once that pace holds.
 
 ## 5. Start the workers
 
-One agent per task, each in **its own tab** (not a side-by-side split, screens are narrow). The brief is short and
-points to the plan file; it repeats the rules that matter most (owned files only, where to test, no commits, what
-never to run) and asks for a report file `review/task-<x>.md` (what changed with file:line, how it was tested,
-anything not verified) and a one-line `DONE` reply. Start dependent tasks after the task they need.
+One agent per task, each in **its own tab** (not a side-by-side split, screens are narrow). In an agent-kit project
+with a `worker` target, start it from the main worktree with `make worker NAME=<task> TIER=simple|medium|complex`
+(worktree, branch, test port, `TASK.md`, its own herdr tab), fill in `TASK.md` (goal, files, contracts, failure cases),
+then brief it. Elsewhere use the recipes in `references/backends.md`.
 
-Every message between agents starts with the sender's name in brackets (`[lead]`, `[task-b] DONE`): text sent into
+The brief is short and points to the plan file or `TASK.md`; it repeats the rules that matter most (owned files only,
+where to test, never commit, what never to run) and asks for a report (what changed with file:line, how it was
+tested, anything not verified, any acceptance check missed with the numbers) in `TASK.md` under `## Report` or in
+`review/task-<x>.md`, and a one-line `[<name>] READY` reply. Start dependent tasks after the task they need.
+
+Every message between agents starts with the sender's name in brackets (`[lead]`, `[task-b] READY`): text sent into
 a pane looks exactly like the user typing, so untagged text is the user. Workers never answer approvals for the user.
 
 ## 6. Watch and relay
@@ -95,9 +107,12 @@ If a worker goes quiet or off-brief, read its output, correct it with a short pr
   with the numbers and ask whether that's acceptable or what to do (don't quietly accept it).
 - Run the project-wide checks from step 1 and any lead-only comparisons from the plan.
 - Look at the combined diff for duplicated logic: new code should reuse existing helpers, not copy their rules.
-- Commit one task per commit, message says why and cites the finding ids, with the agent trailer from the system
-  reminder. Commit Codex workers' changes yourself (its sandbox can't write git metadata). Use the project's own
-  commit hooks; never skip them. You are the only writer of the main branch: workers report and stop.
+- You make every commit; workers never do. With task worktrees, review the diff in the task's worktree and commit
+  there on its branch, then merge into main (and `make finish NAME=<task>` in a kit project). In a shared folder,
+  commit one task per commit. The message says why and cites the finding ids, and ends with the trailer of the agent
+  that wrote the change: yours from the system reminder, `Co-Authored-By: Codex <noreply@openai.com>` for Codex
+  work, the worker model's for a Claude worker. Use the project's commit hooks; never skip them. You are the only
+  writer of the main branch.
 - Deploys, releases and other irreversible or outward-facing steps stay with the user. Merge several reviewed tasks,
   then ask for one deploy. Files a running service writes belong in `.gitignore`, or they block clean-tree deploys.
 - Stop test servers you started by process id, never by a name pattern (a pattern can match your own shell).
