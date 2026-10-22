@@ -97,17 +97,25 @@ class InstallTests(unittest.TestCase):
         self.assertIn('Not inside herdr', out)
         task = open(self.proj + '-w2/TASK.md').read()
         self.assertIn('Lead: herdr pane w9:p9', task); self.assertIn('Agent: claude, model default', task)
+        self.sh('make', 'worker', 'NAME=w2', 'KIND=codex', env={'HERDR_ENV': '0', 'HERDR_PANE_ID': 'w9:p8'})  # a retry
+        task = open(self.proj + '-w2/TASK.md').read()
+        self.assertEqual(task.count('\nLead: '), 1); self.assertIn('Lead: herdr pane w9:p8', task)
+        self.assertEqual(task.count('\nAgent: '), 1); self.assertIn('Agent: codex', task)
         self.assertIn('-m m1 -c model_reasoning_effort=low', self.sh('make', 'worker', 'NAME=w3', 'KIND=codex', 'MODEL=m1', 'EFFORT=low', env={'DRY': '1', 'HERDR_ENV': '1'}))
         self.sh('make', 'finish', 'NAME=w2')
 
     def test_task_skips_a_port_in_use(self):
         self.configure()
         with socket.socket() as busy:
-            busy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); busy.bind(('127.0.0.1', 8001)); busy.listen()
-            self.assertIn('test port 8002', self.sh('make', 'task', 'NAME=p1'))
+            try: busy.bind(('127.0.0.1', 0)); busy.listen()
+            except OSError as e: self.skipTest('cannot listen on a local port here: %s' % e)
+            port = busy.getsockname()[1]                    # a free port from the system, now busy
+            self.write('agent-kit.conf', self.read('agent-kit.conf').replace('TEST_PORT=8001', 'TEST_PORT=%d' % port))
+            self.assertIn('test port %d' % (port + 1), self.sh('make', 'task', 'NAME=p1'))
             path = self.path_without('ss')                  # the macOS case: lsof instead of ss
             if not os.path.exists(os.path.join(path, 'lsof')): self.skipTest('no lsof here to test the fallback')
-            self.assertIn('test port 8003', self.sh('make', 'task', 'NAME=p2', env={'PATH': path}))
+            self.write('agent-kit.conf', self.read('agent-kit.conf').replace('TEST_PORT=%d' % port, 'TEST_PORT=%d' % (port + 1)))
+            self.assertIn('test port %d' % (port + 2), self.sh('make', 'task', 'NAME=p2', env={'PATH': path}))
 
     def test_service_without_systemd(self):
         self.write('agent-kit.conf', self.read('agent-kit.conf').replace('SERVICE=""', 'SERVICE="app"'))

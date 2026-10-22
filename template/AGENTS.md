@@ -33,8 +33,8 @@ TODO: what data exists, what is tracked in git, what only the user may change (l
 - A worker (the `Lead:` line in its `TASK.md` is not `none`) does not repeat the lead's checks or announcements: it reads `TASK.md`, works in its worktree, and reports to the lead. It never commits, merges or deploys: it writes its report under `## Report` in `TASK.md` and replies `[name] READY` (or `[name] BLOCKED <reason>`). The lead reviews the diff and commits it in the worktree with the worker's trailer (Codex's sandbox can't write git metadata anyway), then merges.
 - A worker waiting on an approval shows as `blocked`. Workers never answer approvals; the lead tells the user what the worker wants and why, approves only what stays inside this project's rules, and asks the user for anything else.
 - Outside herdr: Claude sessions with `ListAgents`/`SendMessage`; a Codex session with `python3 scripts/watch-codex.py --send "..."` (prints its reply when its turn ends).
-- Parallel work goes in its own worktree and branch, one per task (`make task`), with its own test port. Never use `git stash`.
-- One lead owns `main`, merges and `make deploy`. Others do not restart the live service.
+- Parallel work goes in its own worktree and branch, one per task (`make task`), with its own test port. If a worktree can't carry the data a task needs, the lead instead gives each task its own files and a scratch folder in the main checkout. Never use `git stash`.
+- One lead owns `main` and merges. Only the lead runs `make deploy`, and only after the user says to; others never restart the live service.
 - Shared files have one writer at a time; name them in `TASK.md` and in the Data section above.
 - State the contracts between tasks before going parallel: anything one task changes that another depends on (a data format, an API, a prompt, a command). Write them in `TASK.md`.
 - Message peers before touching shared state, and when a branch is ready.

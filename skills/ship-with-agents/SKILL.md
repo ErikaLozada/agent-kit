@@ -29,7 +29,8 @@ Brief, plan and report templates are in `references/templates.md`.
 - **agent-kit projects** (an `agent-kit.conf` at the root) usually have `make test/status/task/worker/finish/deploy`,
   a pre-commit hook that runs the tests, and `PROTECTED` files only the user changes. Projects adapt their copies, so
   read the actual `Makefile` and `scripts/` before relying on a target; use only the ones that are there.
-- Pick the backend (`references/backends.md`): herdr if `HERDR_ENV=1` or `herdr` is on PATH, else the Agent tool.
+- Pick the backend (`references/backends.md`): herdr when this session runs inside it (`HERDR_ENV=1`), else the
+  Agent tool (or `codex exec` for Codex).
   Check whether `codex` is installed for a cross-provider reviewer. Check for other active agents (`herdr agent list`)
   and avoid the files they own.
 - Note untracked files the work needs (media, data, `.env`, local builds): a git worktree won't have them.
@@ -79,9 +80,11 @@ Size the team to how fast the user can review: start with two workers and add mo
 ## 5. Start the workers
 
 One agent per task, each in **its own tab** (not a side-by-side split, screens are narrow). In an agent-kit project
-with a `worker` target, start it from the main worktree with `make worker NAME=<task> TIER=simple|medium|complex`
+with a `worker` target and `HERDR_ENV=1`, start it from the main worktree with `make worker NAME=<task> TIER=simple|medium|complex`
 (worktree, branch, test port, `TASK.md`, its own herdr tab), fill in `TASK.md` (goal, files, contracts, failure cases),
-then brief it. Elsewhere use the recipes in `references/backends.md`.
+then brief it. Without herdr, `make worker` only makes the task and prints the command to start the agent; no agent
+is running yet, so start one in that worktree with the Agent tool or `codex exec` (backends). Elsewhere use the
+recipes in `references/backends.md`.
 
 The brief is short and points to the plan file or `TASK.md`; it repeats the rules that matter most (owned files only,
 where to test, never commit, what never to run) and asks for a report (what changed with file:line, how it was
@@ -113,8 +116,8 @@ If a worker goes quiet or off-brief, read its output, correct it with a short pr
   that wrote the change: yours from the system reminder, `Co-Authored-By: Codex <noreply@openai.com>` for Codex
   work, the worker model's for a Claude worker. Use the project's commit hooks; never skip them. You are the only
   writer of the main branch.
-- Deploys, releases and other irreversible or outward-facing steps stay with the user. Merge several reviewed tasks,
-  then ask for one deploy. Files a running service writes belong in `.gitignore`, or they block clean-tree deploys.
+- Deploys, releases and other irreversible or outward-facing steps need the user's go-ahead; only then does the lead
+  run them (`make deploy` in a kit project). Merge several reviewed tasks, then ask for one deploy. Files a running service writes belong in `.gitignore`, or they block clean-tree deploys.
 - Stop test servers you started by process id, never by a name pattern (a pattern can match your own shell).
 
 ## 8. Review the fixes (cross-provider)

@@ -3,13 +3,15 @@
 Pick one. herdr gives the user a visible tab per agent and lets you relay permission prompts; the Agent tool needs
 nothing installed; `codex exec` runs a Codex reviewer or worker without herdr.
 
-**In an agent-kit project** with a `worker` target, don't use the raw recipes below for workers: run
+**In an agent-kit project** with a `worker` target, inside herdr (`HERDR_ENV=1`), don't use the raw recipes below
+for workers: run
 `make worker NAME=<task> TIER=simple|medium|complex` (or `KIND=codex|claude MODEL=... EFFORT=...`) from the main
 worktree. It makes the task's worktree, branch, test port and `TASK.md`, opens its herdr tab and starts the agent with
 the worker settings below. Then fill in `TASK.md` and brief it with `herdr agent prompt`. The reviewer still starts
-with the recipe below.
+with the recipe below. Outside herdr, `make worker` makes the task only (it says "Not inside herdr" and exits 0):
+start the worker in that worktree with the Agent tool or `codex exec -C <worktree>`.
 
-## herdr (preferred when `HERDR_ENV=1` or `herdr` is on PATH)
+## herdr (when this session runs inside it: `HERDR_ENV=1`)
 
 herdr talks to its socket outside the project, so run these Bash commands with the sandbox disabled. Output is JSON;
 parse it with `python3 -c`. Statuses from `herdr agent get`: `working`, `blocked` (waiting on a prompt), `unknown`
