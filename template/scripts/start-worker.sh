@@ -3,7 +3,7 @@
 # with the permissions the user chose for workers.
 #   make worker NAME=fix-search KIND=codex|claude [OWNER=...] [MODEL=...] [EFFORT=low|medium|high]   DRY=1 prints the commands
 # Codex: may write only its worktree, may use the network (local test server, herdr), asks for anything else; it cannot
-# write git metadata, so it leaves its work uncommitted and the lead commits it. Claude: auto permission mode, commits itself.
+# write git metadata. Claude: auto permission mode. Neither commits: the lead reviews the diff and commits it in the worktree.
 {  # read the whole script before running any of it, so editing this file during a run cannot break that run
 set -e
 cd "$(dirname "$0")/.."
@@ -27,7 +27,7 @@ esac
 run() { if [ -n "$DRY" ]; then printf '%q ' "$@"; echo; else "$@"; fi; }
 
 [ -d "$WT" ] || run bash scripts/new-task.sh "$NAME" "$OWNER"
-NOTE=""; [ "$KIND" = codex ] && NOTE="; leave work uncommitted, the lead commits it"
+NOTE="; never commits: the lead reviews and commits"
 [ -n "$DRY" ] || sed -i -e "s|^Lead: none.*|Lead: herdr pane ${HERDR_PANE_ID:-unknown} (report there; it merges and deploys)|" \
   -e "s|^Owner: .*|&\nAgent: $KIND, model ${MODEL:-default}, effort ${EFFORT:-default}$NOTE|" "$WT/TASK.md"
 if [ "${HERDR_ENV:-}" != 1 ]; then

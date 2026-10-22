@@ -38,10 +38,16 @@ Lead: none (make worker fills this in)
 ## Contracts
 (anything other work depends on: a data format, API, prompt, command)
 
+## Failure cases
+(edges the tests must cover: partial success, two operations at once, stale state, reruns)
+
 ## Test server
 ${TEST_SERVER//\{PORT\}/$PORT}
 
 ## Notes
+
+## Report
+(the worker: what changed with file:line, how it was tested, what could not be verified, acceptance checks missed)
 EOF
 echo "Task $NAME: $WT (branch $NAME, test port $PORT). Fill in TASK.md; finish with: make finish NAME=$NAME"
 exit

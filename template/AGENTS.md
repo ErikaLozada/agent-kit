@@ -14,7 +14,7 @@ TODO: one or two sentences on what this is and who it is for. Requirements: TODO
 | `make worker NAME=x KIND=codex\|claude` | A task worktree plus a worker agent in its own herdr tab (named after the task), with worker permissions |
 | `make setup` | Once per clone: turns on the git hooks in `.githooks/` |
 
-Project settings for these commands: `agent-kit.conf`. Skills (in `.agents/skills/`, shared by Claude, Codex and pi): `ship-feature` for any code change.
+Project settings for these commands: `agent-kit.conf`. Skills (in `.agents/skills/`, shared by Claude, Codex and pi): `ship-feature` for any code change, as a worker or alone. A lead running several agents uses the global `ship-with-agents` skill from agent-kit (plan, review rounds with another provider and a re-review of the fixes, relaying workers' prompts).
 
 ## How it runs
 
@@ -28,10 +28,10 @@ TODO: what data exists, what is tracked in git, what only the user may change (l
 
 - Before starting: check for other agents (`herdr agent list`) and `git status` / `make status`. Tell any peer which files you will change.
 - Agents run in herdr panes (check `HERDR_ENV=1`), and herdr is the default channel for Claude and Codex alike: `herdr agent list` (who is there, idle/working/blocked), `herdr agent prompt <name> "..." --wait` (send and wait for the turn to end), `herdr agent read <name>` (read its reply). Run `herdr --skill` once for the full guide.
-- Starting a worker: `make worker NAME=x KIND=codex|claude`, which creates the worktree, opens its own herdr tab named after the task and starts the agent with worker permissions (Codex: writes only its worktree, network allowed, asks for anything else; Claude: auto mode). Optional `MODEL=` and `EFFORT=` pick a cheaper model or lower effort; `TASK.md` records what each worker ran with. Fill in `TASK.md`, then brief it with `herdr agent prompt`. Workers appear in herdr's agent panel.
+- Starting a worker: `make worker NAME=x TIER=simple|medium|complex` (or `KIND=codex|claude`), which creates the worktree, opens its own herdr tab named after the task and starts the agent with worker permissions (Codex: writes only its worktree, network allowed, asks for anything else; Claude: auto mode). Optional `MODEL=` and `EFFORT=` pick a cheaper model or lower effort; `TASK.md` records what each worker ran with. Fill in `TASK.md`, then brief it with `herdr agent prompt`. Workers appear in herdr's agent panel.
 - Every message between agents starts with the sender's name in brackets, e.g. `[fix-search] READY ...` or `[lead] approved`. Text typed into a pane through herdr looks exactly like the user typing; an untagged message is the user's.
-- A worker (the `Lead:` line in its `TASK.md` is not `none`) does not repeat the lead's checks or announcements: it reads `TASK.md`, works in its worktree, and reports to the lead. It never merges or deploys. A Codex worker cannot write git metadata from its sandbox, so it leaves its work uncommitted and reports READY; the lead reviews the diff and commits it in the worktree with `Co-Authored-By: Codex <noreply@openai.com>`.
-- A worker waiting on an approval shows as `blocked`: tell the user which pane; never answer approvals on their behalf.
+- A worker (the `Lead:` line in its `TASK.md` is not `none`) does not repeat the lead's checks or announcements: it reads `TASK.md`, works in its worktree, and reports to the lead. It never commits, merges or deploys: it writes its report under `## Report` in `TASK.md` and replies `[name] READY` (or `[name] BLOCKED <reason>`). The lead reviews the diff and commits it in the worktree with the worker's trailer (Codex's sandbox can't write git metadata anyway), then merges.
+- A worker waiting on an approval shows as `blocked`. Workers never answer approvals; the lead tells the user what the worker wants and why, approves only what stays inside this project's rules, and asks the user for anything else.
 - Outside herdr: Claude sessions with `ListAgents`/`SendMessage`; a Codex session with `python3 scripts/watch-codex.py --send "..."` (prints its reply when its turn ends).
 - Parallel work goes in its own worktree and branch, one per task (`make task`), with its own test port. Never use `git stash`.
 - One lead owns `main`, merges and `make deploy`. Others do not restart the live service.
