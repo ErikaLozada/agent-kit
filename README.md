@@ -12,6 +12,15 @@ bash <kit>/install.sh --link-skills      # once per machine: link skills/* into 
 The kit lives at `~/lab/agent-kit` on omarchy (the original repo) and `~/Desktop/projects/agent-kit` on the Mac (a
 clone; `git pull`/`git push` against omarchy keep them in step).
 
+## Your own copy (from GitHub)
+
+1. Clone it where you keep projects, e.g. `git clone <repo url> ~/lab/agent-kit`.
+2. `bash install.sh --link-skills` links `ship-with-agents` and `new-project` into Claude Code, Codex (`~/.agents`)
+   and pi, for each one whose skills folder exists. It never replaces a skill you already have.
+3. Needs git, bash and python3. Optional: [herdr](https://herdr.dev) for one tab per agent and relayed prompts, and
+   the Codex CLI for an other-provider reviewer; without them the skill uses Claude Code's own agents.
+4. `make test` checks the kit on your machine (Linux or macOS).
+
 ## Skills
 
 | Skill | Where | For |
