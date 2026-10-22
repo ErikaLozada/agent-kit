@@ -1,12 +1,24 @@
 # agent-kit
 
-A starting kit for projects where several coding agents (Claude Code, Codex, pi) work at the same time. Built from what worked, and what went wrong, on Crate Digger on 2026-10-18.
+A starting kit for projects where several coding agents (Claude Code, Codex, pi) work at the same time. Built from what worked, and what went wrong, on Crate Digger on 2026-10-18; on 2026-10-23 it took in `ship-with-agents`, the lead's skill written from Crate Digger and the reelkit review round.
 
 ## Use
 
 ```
-bash ~/lab/agent-kit/install.sh ~/lab/my-project "My Project"
+bash <kit>/install.sh <projects folder>/my-project "My Project"
+bash <kit>/install.sh --link-skills      # once per machine: link skills/* into Claude, Codex and pi
 ```
+
+The kit lives at `~/lab/agent-kit` on omarchy (the original repo) and `~/Desktop/projects/agent-kit` on the Mac (a
+clone; `git pull`/`git push` against omarchy keep them in step).
+
+## Skills
+
+| Skill | Where | For |
+| --- | --- | --- |
+| `ship-with-agents` | `skills/`, linked globally | The lead: learn the project, review with another provider, plan tasks with owner files and acceptance checks, start workers (`make worker` in kit projects), relay their prompts, commit, re-review the fixes. Works in any repo, kit or not |
+| `new-project` | `skills/`, linked globally | Runs the installer and fills in the project's details |
+| `ship-feature` | `template/`, copied into each project | One change, as a worker (never commits; reports in `TASK.md`) or working alone |
 
 Or ask any agent to set up a project: the `new-project` skill (linked into Claude, Codex and pi) runs the installer and fills in the project's details. The installer works on new or existing folders and never overwrites a file.
 
@@ -26,7 +38,7 @@ Or ask any agent to set up a project: the `new-project` skill (linked into Claud
 | `scripts/watch-codex.py` | Fallback outside herdr: message a Codex session and get its reply. Uses no model. Inside herdr, `herdr agent prompt/read/start` is the default channel for Claude and Codex |
 | `.githooks/pre-commit` | Tests on every commit; refuses PROTECTED files unless `USER_OK=1` |
 | `docs/decisions.md` | Append-only decision log |
-| `.agents/skills/ship-feature` | The change workflow; `.claude/skills` links to `.agents/skills` |
+| `.agents/skills/ship-feature` | The worker's and solo checklist; `.claude/skills` links to `.agents/skills` |
 
 ## Principles
 
@@ -37,4 +49,6 @@ Or ask any agent to set up a project: the `new-project` skill (linked into Claud
 
 ## Developing the kit
 
-`make test` here runs the kit's own tests: the watcher, and a full install into a temporary project (install, test, task, status, finish, protected-file hook). Crate Digger has its own adapted copies of these scripts; changes proven there can be brought back here.
+`make test` here runs the kit's own tests: the watcher, skill linking, and a full install into a temporary project (install, test, task, status, finish, protected-file hook, ports, macOS without ss or systemd). Run it on both laptops before merging into `main`.
+
+Template changes reach new projects only. Existing projects (Crate Digger has its own adapted copies of these scripts) adopt a change by hand; changes proven there can be brought back here. The global skills update everywhere at once, because they are links into this repo.
