@@ -1,4 +1,4 @@
-# Tests for the kit itself; see README.md.
+# Tests for the kit itself; see docs/guide.md.
 .PHONY: test
 
 test:

@@ -1,63 +1,96 @@
 # agent-kit
 
-A starting kit for projects where several coding agents (Claude Code, Codex, pi) work at the same time. Built from what worked, and what went wrong, on Crate Digger on 2026-10-18; on 2026-10-23 it took in `ship-with-agents`, the lead's skill written from Crate Digger and the reelkit review round.
+A kit for running several AI coding agents on one project at the same time — Claude Code, OpenAI's Codex and pi — without them colliding, merging unreviewed work or deploying by accident. It has two parts:
+- a **lead skill** that plans, briefs, reviews and commits;
+- a **project template** of `make` commands, git hooks and shared instructions that turn the rules into code.
 
-## Use
+It wasn't designed up front. I extracted it from two real projects, keeping what worked and adding a guard for each thing that went wrong:
+- [Crate Digger](https://github.com/ErikaLozada/crate-digger), a record-buying assistant built feature by feature by parallel agents;
+- [reel-kit](https://github.com/ErikaLozada/reel-kit), a video pipeline whose code-review round ran 11 fixes in parallel.
 
+## The problem
+
+One agent is easy to supervise. Several at once fail in predictable ways:
+- two of them edit the same file;
+- a worker's tests pass, but the bug sits in a case its brief never mentioned;
+- a fix is reported as done but only partly works;
+- someone restarts the live service mid-task;
+- an evaluation label quietly changes to fit the model's output;
+- decisions vanish into chat history.
+
+The kit answers each with a rule, and where possible with code that enforces the rule.
+
+## How it works
+
+```mermaid
+flowchart TB
+  user(["Me: decisions,<br/>approvals, labels"])
+  lead["Lead agent<br/>ship-with-agents skill"]
+  plan["Plan: tasks with owned files,<br/>contracts, acceptance checks,<br/>failure cases"]
+  subgraph wt["One git worktree + branch per task (make task / make worker)"]
+    w1["Worker A<br/>e.g. Claude Haiku"]
+    w2["Worker B<br/>e.g. Codex"]
+  end
+  review["Reviewer from another provider<br/>(Codex when workers are Claude)"]
+  main[("main<br/>pre-commit hook: tests,<br/>protected files")]
+
+  user <--> lead
+  lead --> plan --> w1 & w2
+  w1 & w2 -- "report: READY / BLOCKED" --> lead
+  lead -- "reads every diff,<br/>runs the full suite" --> review
+  review -- "findings → fix tasks →<br/>re-review" --> lead
+  lead -- "commits, merges;<br/>deploys only on my go-ahead" --> main
 ```
-bash <kit>/install.sh <projects folder>/my-project "My Project"
-bash <kit>/install.sh --link-skills      # once per machine: link skills/* into Claude, Codex and pi
-```
 
-The main copy is the private GitHub repo `ErikaLozada/agent-kit`. Clones: `~/lab/agent-kit` on omarchy and
-`~/Desktop/projects/agent-kit` on the Mac; `git pull` and `git push` against GitHub keep them in step.
-
-## Your own copy (from GitHub)
-
-1. Clone it where you keep projects, e.g. `git clone <repo url> ~/lab/agent-kit`.
-2. `bash install.sh --link-skills` links `ship-with-agents` and `new-project` into Claude Code, Codex (`~/.agents`)
-   and pi, for each one whose skills folder exists. It never replaces a skill you already have.
-3. Needs git, bash and python3. Optional: [herdr](https://herdr.dev) for one tab per agent and relayed prompts, and
-   the Codex CLI for an other-provider reviewer; without them the skill uses Claude Code's own agents.
-4. `make test` checks the kit on your machine (Linux or macOS).
-
-## Skills
-
-| Skill | Where | For |
-| --- | --- | --- |
-| `ship-with-agents` | `skills/`, linked globally | The lead: learn the project, review with another provider, plan tasks with owner files and acceptance checks, start workers (`make worker` in kit projects), relay their prompts, commit, re-review the fixes. Works in any repo, kit or not |
-| `new-project` | `skills/`, linked globally | Runs the installer and fills in the project's details |
-| `ship-feature` | `template/`, copied into each project | One change, as a worker (never commits; reports in `TASK.md`) or working alone |
-
-Or ask any agent to set up a project: the `new-project` skill (linked into Claude, Codex and pi) runs the installer and fills in the project's details. The installer works on new or existing folders and never overwrites a file.
-
-## What a project gets
-
-| File | Purpose |
-| --- | --- |
-| `AGENTS.md` | Instructions every harness reads: commands, how it runs, data rules, how agents coordinate, glossary. Project sections are TODOs to fill in |
-| `CLAUDE.md` | `@AGENTS.md`, so Claude Code reads the same file |
-| `agent-kit.conf` | The project's settings for the scripts: service, health URL, test command, worktree links, protected files |
-| `Makefile` | `test`, `status`, `deploy`, `task`, `worker`, `finish`, `report`, `setup` |
-| `scripts/test.sh` | `TEST_CMD`, or `unittest` and `node --test` on `tests/` |
-| `scripts/status.sh` | What is live; every worktree with its task, owner and uncommitted changes |
-| `scripts/deploy.sh` | Only a clean, tested `main`; restart, health check, deploy log |
-| `scripts/start-worker.sh` | `make worker`: task worktree, herdr pane and agent with bounded worker permissions |
-| `scripts/new-task.sh`, `finish-task.sh` | A worktree and branch per task, with links, a test port and `TASK.md`; removal once merged |
-| `scripts/watch-codex.py` | Fallback outside herdr: message a Codex session and get its reply. Uses no model. Inside herdr, `herdr agent prompt/read/start` is the default channel for Claude and Codex |
-| `.githooks/pre-commit` | Tests on every commit; refuses PROTECTED files unless `USER_OK=1` |
-| `docs/decisions.md` | Append-only decision log |
-| `.agents/skills/ship-feature` | The worker's and solo checklist; `.claude/skills` links to `.agents/skills` |
+- **The lead** (`skills/ship-with-agents`) learns each project's own commands and rules instead of assuming them. It writes one brief per task, naming the files it owns, its contract with the other tasks, the acceptance checks and the failure cases to test. It starts the workers, relays their permission prompts to me, reads every diff and runs the full suite. Workers never commit; the lead does.
+- **Workers** each get their own git worktree, branch and test port (`make task`, `make worker`). The kit's scripts start Claude or Codex in its own terminal tab ([herdr](https://herdr.dev)) with permissions bounded to that worktree, and every message between agents is tagged with its sender.
+- **A reviewer from another provider** reviews the plan and the merged work. It catches the lead's blind spots, including mistakes in the lead's own briefs. Then it re-reviews the fixes, because "the code changed" doesn't mean "fixed".
+- **Hooks and scripts enforce what must always happen:**
+  - the pre-commit hook runs the tests, and refuses changes to protected files, such as evaluation labels, unless I approve them;
+  - `make deploy` refuses a dirty tree or failing tests, then health-checks the service and logs the commit;
+  - `make status` shows what's live and every worktree's task and uncommitted changes.
 
 ## Principles
 
-- **Must always happen → code** (hooks, `make`). **Same steps, needs judgement → skill.** **Facts and rules → `AGENTS.md`**, kept short and grown from real mistakes.
-- One worktree per task (or owner files and a scratch folder when a worktree can't carry the data); one lead merges, and deploys only on the user's go-ahead; one writer per shared file; contracts between tasks stated up front.
+- **What must always happen goes in code** (hooks, `make`). **Steps that need judgement go in a skill.** **Facts and rules go in `AGENTS.md`**, one file every agent harness reads. It's kept short and grows from real mistakes.
+- One worktree per task, one writer per shared file, and the contracts between tasks stated up front.
+- One lead merges. Deploys happen only on the human's go-ahead.
 - Results and status are generated by scripts, never copied by hand.
-- Start with two agents; scale to how fast the user can review.
+- Start with two agents, and scale to how fast the human can review.
 
-## Developing the kit
+## What it changed in practice
 
-`make test` here runs the kit's own tests: the watcher, skill linking, and a full install into a temporary project (install, test, task, status, finish, protected-file hook, ports, macOS without ss or systemd). Run it on both laptops before merging into `main`.
+- **Cheaper models where the evidence allows.** In Crate Digger, finished tasks were replayed with cheaper worker models and graded against the reviewed result on five gates. Claude Haiku and Sonnet passed 6/6 and Codex luna 6/7, so routine tasks moved off the most expensive model ([replay results](https://github.com/ErikaLozada/crate-digger/blob/main/docs/tasks/replays.md)).
+- **Bugs caught where tests couldn't.** Every bug stopped at the lead's review had passed the worker's own tests. That's why briefs now list failure cases, and why the lead reads every diff in full.
+- **Partial fixes caught.** In reel-kit, the second review found two fixes that only partly worked. One was a lock check that ignored later edits; the other a filename collision that had just moved one step down the pipeline. Both became a planned follow-up task.
+- **A list of lessons that grows.** Each project's "went wrong before" lessons go into the skill, so the next project starts with them. Examples: Codex reaching for screen control during a code review, sandboxed commands failing on sockets, worktrees missing untracked media.
 
-Template changes reach new projects only. Existing projects (Crate Digger has its own adapted copies of these scripts) adopt a change by hand; changes proven there can be brought back here. The global skills update everywhere at once, because they are links into this repo.
+## What a project gets
+
+`bash install.sh <folder> "<Name>"` works on a new or existing folder and never overwrites a file. It adds:
+
+| File | Purpose |
+| --- | --- |
+| `AGENTS.md`, `CLAUDE.md` | Shared instructions for every harness: commands, how it runs, data rules, how agents coordinate |
+| `agent-kit.conf` | The project's service, health URL, test command, worktree links and protected files |
+| `Makefile` | `test`, `status`, `deploy`, `task`, `worker`, `finish`, `report`, `setup` |
+| `scripts/` | Worktree per task, worker start with bounded permissions, status, guarded deploy, a Codex watcher |
+| `.githooks/pre-commit` | Tests on every commit; protected files need explicit approval |
+| `docs/decisions.md` | An append-only decision log |
+| `.agents/skills/ship-feature` | The worker's checklist, also used when working alone |
+
+The kit tests itself: `make test` does a full install into a temporary project on Linux and macOS. It runs a task through to finish, checks the protected-file hook, port assignment, and the macOS fallbacks for the Linux-only tools `ss` and `systemd`.
+
+## Quick start
+
+```sh
+git clone https://github.com/ErikaLozada/agent-kit.git
+bash agent-kit/install.sh --link-skills                 # once per machine: links the skills into Claude Code, Codex and pi
+bash agent-kit/install.sh ~/projects/my-project "My Project"
+```
+
+It needs git, bash and python3. herdr and the Codex CLI are optional; without them the lead uses Claude Code's own subagents. Details are in the [guide](docs/guide.md), and the kit's own plan and review rounds are in [`docs/`](docs/).
+
+## Licence
+
+[MIT](LICENSE)
