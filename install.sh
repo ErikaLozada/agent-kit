@@ -31,7 +31,7 @@ while IFS= read -r -d '' src; do
   sed -e "s|{{PROJECT}}|$NAME|g" -e "s|{{DATE}}|$(date +%F)|g" "$src" > "$rel"
   [ -x "$src" ] && chmod +x "$rel"
   copied+=("$rel")
-done < <(find "$KIT" -type f -print0 | sort -z)
+done < <(find "$KIT" -type f ! -name .DS_Store -print0 | sort -z)
 
 if [ ! -e .claude/skills ]; then mkdir -p .claude && ln -s ../.agents/skills .claude/skills && copied+=(".claude/skills -> .agents/skills"); fi
 chmod +x scripts/*.sh .githooks/pre-commit 2>/dev/null || true

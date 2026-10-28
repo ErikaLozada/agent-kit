@@ -5,7 +5,7 @@ description: Start a new project (or adopt an existing one) with the agent kit -
 
 # Set up a project with the agent kit
 
-The kit is the folder two levels above this skill's real location: `KIT=$(cd -P <this skill's folder>/../.. && pwd)`, e.g. `cd -P ~/.claude/skills/new-project/../..` (on omarchy that is `~/lab/agent-kit`, on the Mac `~/Desktop/projects/agent-kit`; see its README). Projects belong where the user keeps them (`~/lab` on omarchy, `~/Desktop/projects` on the Mac), never directly in the home folder; ask if unsure.
+The kit is the folder two levels above this skill's real location: `KIT=$(cd -P <this skill's folder>/../.. && pwd)`, e.g. `cd -P ~/.claude/skills/new-project/../..` (see its `docs/guide.md`). Projects belong where the user keeps them (for example `~/lab` or `~/projects`), never directly in the home folder; if the user's instructions don't say where, ask.
 
 1. **Name and place.** Agree on the project name and folder (`<projects folder>/<name>`). For an existing folder, look at what is there first: the installer never overwrites files, but an existing `AGENTS.md`, `Makefile` or hook will be kept and must be merged by hand.
 2. **Install.** `bash "$KIT/install.sh" <projects folder>/<name> "<Project Name>"`. If `ship-with-agents` is not in `~/.claude/skills` (or `~/.agents/skills`), also run `bash "$KIT/install.sh" --link-skills` and report what it added or kept. Read its list of added and kept files and tell the user about any kept ones.

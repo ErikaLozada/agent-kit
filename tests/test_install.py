@@ -143,6 +143,14 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(home, '--link-skills')))
         self.assertNotIn('added', run())                                                # a rerun changes nothing
 
+    def test_skips_finder_metadata(self):
+        kit = tempfile.mkdtemp(); self.addCleanup(subprocess.run, ['rm', '-rf', kit])
+        subprocess.run(['cp', '-R', os.path.join(KIT, 'install.sh'), os.path.join(KIT, 'template'), kit], check=True)
+        with open(os.path.join(kit, 'template', 'scripts', '.DS_Store'), 'wb') as f: f.write(b'Bud1\x00\xff\xfe\x80')  # binary, as Finder writes it
+        proj = os.path.join(kit, 'proj')
+        self.sh('bash', os.path.join(kit, 'install.sh'), proj, 'Proj', cwd=kit)
+        self.assertFalse(os.path.exists(os.path.join(proj, 'scripts', '.DS_Store')))
+
     def test_deploy_refuses_without_service(self):
         self.assertIn('No SERVICE', self.sh('make', 'deploy', ok=False))
 
