@@ -275,11 +275,128 @@ def infer_project_identity(root: Path, config: dict) -> tuple[str, str]:
     return name, subtitle
 
 
+def _phase_num_variants(num: str) -> set[str]:
+    s = str(num).strip()
+    variants = {s}
+    m = re.match(r"^(\d+)(.*)$", s)
+    if m:
+        lead, rest = m.group(1), m.group(2)
+        variants.add(f"{int(lead)}{rest}")
+        variants.add(f"{int(lead):02d}{rest}")
+    return variants
+
+
+def parse_roadmap_phase_details(text: str) -> dict[str, dict]:
+    """Parse `### Phase N: Name` detail sections (Goal, Depends on, Requirements, Success Criteria, Waves/Plans)."""
+    details: dict[str, dict] = {}
+    headings = list(
+        re.finditer(
+            r"^\s*#{2,3}\s+Phase\s+(\d+(?:\.\d+)?)\s*[:—-]\s*(.+?)\s*$",
+            text,
+            re.MULTILINE,
+        )
+    )
+    for idx, m in enumerate(headings):
+        num = m.group(1).strip()
+        start = m.end()
+        end = headings[idx + 1].start() if idx + 1 < len(headings) else len(text)
+        # Stop before a higher-level `## ` section if any
+        block = text[start:end]
+        next_h2 = re.search(r"^\s*##\s+(?!Phase\s+\d)", block, re.MULTILINE)
+        if next_h2:
+            block = block[: next_h2.start()]
+
+        goal = ""
+        depends_on = ""
+        reqs = ""
+        plans_summary = ""
+        criteria: list[str] = []
+        waves: list[dict] = []
+
+        gm = re.search(r"^\s*\*\*Goal\*\*\s*:?\s*(.+)$", block, re.MULTILINE)
+        if gm:
+            goal = gm.group(1).strip().lstrip(":").strip()
+        dm = re.search(r"^\s*\*\*Depends on\*\*\s*:?\s*(.+)$", block, re.MULTILINE)
+        if dm:
+            depends_on = dm.group(1).strip().lstrip(":").strip()
+        rm = re.search(r"^\s*\*\*Requirements\*\*\s*:?\s*(.+)$", block, re.MULTILINE)
+        if rm:
+            reqs = rm.group(1).strip().lstrip(":").strip()
+        pm = re.search(r"^\s*\*\*Plans:?\*\*\s*:?\s*(.+)$", block, re.MULTILINE)
+        if pm:
+            plans_summary = pm.group(1).strip().lstrip(":").strip()
+
+        lines = block.splitlines()
+        mode = ""
+        current_wave: dict | None = None
+        for raw in lines:
+            stripped = raw.strip()
+            if re.match(r"^\*\*Success Criteria\*\*", stripped):
+                mode = "criteria"
+                continue
+            if re.match(r"^(?:\*\*Plans:?\*\*|Plans:)\s*$", stripped) or re.match(r"^\*\*Plans:?\*\*", stripped):
+                mode = "plans"
+                continue
+            if mode == "criteria":
+                if stripped.startswith("**") and not re.match(r"^\d+\.\s+", stripped):
+                    mode = ""
+                else:
+                    cm = re.match(r"^(?:\d+\.|[-*])\s+(.+)$", stripped)
+                    if cm:
+                        criteria.append(cm.group(1).strip())
+                    continue
+            # Wave headings & plan items (anywhere inside or after Plans:)
+            wm = re.match(r"^\*\*(Wave\s+[^*]+)\*\*(?:\s*\*?\(([^)]+)\)\*?)?(?:\s*[-—:]\s*(.+))?$", stripped)
+            if wm:
+                mode = "plans"
+                note = (wm.group(2) or wm.group(3) or "").strip()
+                current_wave = {"label": wm.group(1).strip(), "note": note, "plans": []}
+                waves.append(current_wave)
+                continue
+            plm = re.match(r"^[-*]\s+\[([ xX])\]\s+`?([A-Za-z0-9._-]+-PLAN\.md|[A-Za-z0-9._-]+\.md)`?(?:\s*[—:-]\s*(.+))?$", stripped)
+            if plm:
+                mode = "plans"
+                if current_wave is None:
+                    current_wave = {"label": "Plans", "note": "", "plans": []}
+                    waves.append(current_wave)
+                current_wave["plans"].append(
+                    {
+                        "done": plm.group(1).lower() == "x",
+                        "file": plm.group(2).strip(),
+                        "desc": (plm.group(3) or "").strip(),
+                    }
+                )
+            elif mode == "plans":
+                plm2 = re.match(r"^[-*]\s+\[([ xX])\]\s+(.+)$", stripped)
+                if plm2:
+                    if current_wave is None:
+                        current_wave = {"label": "Plans", "note": "", "plans": []}
+                        waves.append(current_wave)
+                    current_wave["plans"].append(
+                        {
+                            "done": plm2.group(1).lower() == "x",
+                            "file": "",
+                            "desc": plm2.group(2).strip(),
+                        }
+                    )
+
+        details[num] = {
+            "goal": goal,
+            "depends_on": depends_on,
+            "reqs": reqs,
+            "plans_summary": plans_summary,
+            "success_criteria": criteria,
+            "waves": waves,
+        }
+    return details
+
+
 def parse_roadmap_phases(root: Path) -> list[dict]:
     roadmap = root / ".planning" / "ROADMAP.md"
     if not roadmap.is_file():
         return []
     text = roadmap.read_text(encoding="utf-8", errors="replace")
+    details_by_num = parse_roadmap_phase_details(text)
     phases: list[dict] = []
     seen_nums: set[str] = set()
 
@@ -296,14 +413,20 @@ def parse_roadmap_phases(root: Path) -> list[dict]:
         seen_nums.add(num)
         title = m.group(3).strip().rstrip("*")
         desc = (m.group(4) or "").strip()
+        det = details_by_num.get(num, {})
         phases.append(
             {
                 "num": num,
                 "name": title,
                 "state": "done" if done else "queued",
                 "status": "Done" if done else "Queued",
-                "deliverables": desc or "See ROADMAP.md for phase details.",
-                "reqs": "",
+                "deliverables": desc or det.get("goal") or "See ROADMAP.md for phase details.",
+                "reqs": det.get("reqs", ""),
+                "goal": det.get("goal", ""),
+                "depends_on": det.get("depends_on", ""),
+                "plans_summary": det.get("plans_summary", ""),
+                "success_criteria": det.get("success_criteria", []),
+                "waves": det.get("waves", []),
             }
         )
 
@@ -318,14 +441,20 @@ def parse_roadmap_phases(root: Path) -> list[dict]:
             if num in seen_nums:
                 continue
             seen_nums.add(num)
+            det = details_by_num.get(num, {})
             phases.append(
                 {
                     "num": num,
                     "name": m.group(2).strip(),
                     "state": "queued",
                     "status": "Planned",
-                    "deliverables": "See ROADMAP.md for phase details.",
-                    "reqs": "",
+                    "deliverables": det.get("goal") or "See ROADMAP.md for phase details.",
+                    "reqs": det.get("reqs", ""),
+                    "goal": det.get("goal", ""),
+                    "depends_on": det.get("depends_on", ""),
+                    "plans_summary": det.get("plans_summary", ""),
+                    "success_criteria": det.get("success_criteria", []),
+                    "waves": det.get("waves", []),
                 }
             )
 
@@ -336,6 +465,81 @@ def parse_roadmap_phases(root: Path) -> list[dict]:
             ph["status"] = "Active"
             break
     return phases
+
+
+def enrich_phases(
+    phases: list[dict],
+    roadmap_phases: list[dict],
+    docs: list[dict],
+    snapshots: list[dict],
+) -> list[dict]:
+    """Merge ROADMAP.md details into config phases and link matching docs, plans, and snapshots."""
+    rm_by_num = {str(p.get("num", "")).strip(): p for p in roadmap_phases}
+    doc_by_basename = {Path(d["rel_path"]).name.lower(): d["id"] for d in docs}
+
+    enriched: list[dict] = []
+    for raw_ph in phases:
+        ph = dict(raw_ph)
+        num = str(ph.get("num", "")).strip()
+        rm = rm_by_num.get(num, {})
+        for field in ("goal", "depends_on", "reqs", "plans_summary", "success_criteria", "waves"):
+            if not ph.get(field) and rm.get(field):
+                ph[field] = rm[field]
+
+        variants = _phase_num_variants(num)
+        # Match docs inside .planning/phases/<NN>-* or filename starting with <NN>-
+        matched_doc_ids: list[str] = []
+        for d in docs:
+            rel = d["rel_path"]
+            rel_lower = rel.lower()
+            base = Path(rel).name.lower()
+            hit = False
+            for v in variants:
+                vl = v.lower()
+                if f".planning/phases/{vl}-" in rel_lower or f".planning/phases/{vl}/" in rel_lower:
+                    hit = True
+                    break
+                if rel_lower.startswith(".planning/") and (base.startswith(f"{vl}-") or base.startswith(f"phase-{vl}-")):
+                    hit = True
+                    break
+            if hit:
+                matched_doc_ids.append(d["id"])
+        ph["doc_ids"] = matched_doc_ids
+
+        # Link each plan entry to its PLAN and SUMMARY doc IDs when present
+        plan_total = 0
+        plan_done = 0
+        linked_waves = []
+        for w in ph.get("waves") or []:
+            w_copy = dict(w)
+            w_plans = []
+            for pl in w.get("plans") or []:
+                pl_copy = dict(pl)
+                plan_total += 1
+                if pl_copy.get("done"):
+                    plan_done += 1
+                fname = str(pl_copy.get("file", "")).strip()
+                if fname:
+                    pl_copy["doc_id"] = doc_by_basename.get(fname.lower(), "")
+                    summary_name = re.sub(r"-PLAN\.md$", "-SUMMARY.md", fname, flags=re.IGNORECASE)
+                    if summary_name.lower() != fname.lower():
+                        pl_copy["summary_doc_id"] = doc_by_basename.get(summary_name.lower(), "")
+                w_plans.append(pl_copy)
+            w_copy["plans"] = w_plans
+            linked_waves.append(w_copy)
+        ph["waves"] = linked_waves
+        ph["plan_done"] = plan_done
+        ph["plan_total"] = plan_total
+
+        # Match frozen snapshots (e.g. phase-01-*.html)
+        matched_snaps = []
+        for s in snapshots:
+            sname = s["name"].lower()
+            if any(re.search(rf"(?:^|[-_])phase-?{re.escape(v.lower())}(?:[-_.]|$)", sname) for v in variants):
+                matched_snaps.append(s)
+        ph["snapshots"] = matched_snaps
+        enriched.append(ph)
+    return enriched
 
 
 def load_json_file(path: Path, default):
@@ -356,6 +560,42 @@ def discover_snapshots(snapshots_dir: Path) -> list[dict]:
     return snaps
 
 
+def render_phase_bar(phases: list[dict]) -> str:
+    if not phases:
+        return ""
+    tabs = [
+        '<button type="button" class="phase-tab active" data-phase-tab="overview">'
+        'Overview <span class="phase-tab-chip">Hub</span></button>'
+    ]
+    for ph in phases:
+        st = ph.get("state", "queued")
+        num = html_lib.escape(str(ph.get("num", "")))
+        name = html_lib.escape(str(ph.get("name", "")))
+        short_name = name if len(name) <= 26 else name[:24].rstrip() + "…"
+        ptotal = int(ph.get("plan_total") or 0)
+        pdone = int(ph.get("plan_done") or 0)
+        if st == "done":
+            chip_cls = "ok"
+            chip_txt = "Done ✓" if not ptotal else f"{pdone}/{ptotal} ✓"
+        elif st in ("current", "active"):
+            chip_cls = "info"
+            chip_txt = f"{pdone}/{ptotal}" if ptotal else str(ph.get("status") or "Active")
+        else:
+            chip_cls = ""
+            chip_txt = f"{pdone}/{ptotal}" if ptotal else str(ph.get("status") or "Queued")
+        tabs.append(
+            f'<button type="button" class="phase-tab" data-phase-tab="{num}">'
+            f'P{num}: {short_name}'
+            f' <span class="phase-tab-chip {chip_cls}">{html_lib.escape(chip_txt)}</span>'
+            f"</button>"
+        )
+    return (
+        '<nav class="phase-bar" id="phaseBar" aria-label="Phase navigation">'
+        f'<div class="phase-bar-inner">{"".join(tabs)}</div>'
+        "</nav>"
+    )
+
+
 def render_phase_track(phases: list[dict]) -> str:
     if not phases:
         return ""
@@ -370,14 +610,24 @@ def render_phase_track(phases: list[dict]) -> str:
         num = html_lib.escape(str(ph.get("num", "")))
         status = html_lib.escape(str(ph.get("status", "")))
         name = html_lib.escape(str(ph.get("name", "")))
+        ptotal = int(ph.get("plan_total") or 0)
+        pdone = int(ph.get("plan_done") or 0)
+        doc_count = len(ph.get("doc_ids") or [])
+        meta_bits = []
+        if ptotal:
+            meta_bits.append(f"{pdone}/{ptotal} plans")
+        if doc_count:
+            meta_bits.append(f"{doc_count} docs")
+        meta_line = " · ".join(meta_bits) if meta_bits else "View details"
         pills.append(
-            f'<div class="{cls}">'
+            f'<button type="button" class="{cls}" data-phase-open="{num}">'
             f'<div class="phase-pill-num"><span>P{num}</span><span>{status}</span></div>'
             f'<div class="phase-pill-name">{name}</div>'
-            f"</div>"
+            f'<div class="phase-pill-meta"><span>{html_lib.escape(meta_line)}</span><span>→</span></div>'
+            f"</button>"
         )
     return (
-        '<div class="track-label">Project Phases</div>'
+        '<div class="track-label">Project Phases (click any phase to inspect details, waves &amp; docs)</div>'
         f'<div class="phase-track">{"".join(pills)}</div>'
     )
 
@@ -492,7 +742,8 @@ def render_roadmap_section(phases: list[dict]) -> tuple[str, str, str]:
         rows.append(
             f"<tr><td><strong>{num}. {name}</strong></td>"
             f'<td><span class="badge {badge_cls}">{status}</span></td>'
-            f"<td>{deliverables}</td><td>{reqs_cell}</td></tr>"
+            f"<td>{deliverables}</td><td>{reqs_cell}</td>"
+            f'<td><button type="button" class="btn btn-sm" data-phase-open="{num}">Open →</button></td></tr>'
         )
     nav_item = (
         '<li><a class="nav-link" href="#sec-roadmap" data-sec="sec-roadmap">'
@@ -505,7 +756,7 @@ def render_roadmap_section(phases: list[dict]) -> tuple[str, str, str]:
       <div class="section-head">
         <div>
           <h2 class="section-title"><span class="section-num">2</span> Project Roadmap</h2>
-          <p class="section-desc">Phases parsed from <code>.planning/ROADMAP.md</code> or <code>.scratch/hub-config.json</code>.</p>
+          <p class="section-desc">Phases parsed from <code>.planning/ROADMAP.md</code> or <code>.scratch/hub-config.json</code>. Click any phase to inspect its waves, plans, docs, and execution log.</p>
         </div>
       </div>
       <div class="card-stack">
@@ -513,7 +764,7 @@ def render_roadmap_section(phases: list[dict]) -> tuple[str, str, str]:
           <div class="card-body">
             <div class="data-table-wrap">
               <table class="data-table">
-                <thead><tr><th>Phase</th><th>Status</th><th>Deliverables</th><th>Reqs</th></tr></thead>
+                <thead><tr><th>Phase</th><th>Status</th><th>Deliverables</th><th>Reqs</th><th>Details</th></tr></thead>
                 <tbody>{"".join(rows)}</tbody>
               </table>
             </div>
@@ -694,10 +945,33 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .topbar-sub { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .spacer { flex: 1; }
 
+  .phase-bar {
+    position: sticky; top: 40px; z-index: 25;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+  }
+  .phase-bar-inner {
+    width: 100%; max-width: 1360px; margin: 0 auto; height: 38px;
+    display: flex; align-items: center; gap: 6px;
+    overflow-x: auto; scrollbar-width: thin;
+  }
+  .phase-tab {
+    appearance: none; border: 1px solid transparent; background: transparent;
+    color: var(--text-muted); font: inherit; font-size: 12.5px; font-weight: 600;
+    padding: 4px 10px; border-radius: var(--radius); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; flex: none;
+  }
+  .phase-tab:hover { background: var(--surface-subtle); color: var(--text); }
+  .phase-tab.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border); }
+  .phase-tab-chip { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: var(--radius-sm); background: var(--surface-subtle); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .phase-tab-chip.ok { background: var(--ok-bg); color: var(--ok); }
+  .phase-tab-chip.info { background: var(--accent-soft); color: var(--accent); }
+  body.has-phase-bar { --top-offset: 78px; }
+
   .page-shell { width: 100%; max-width: 1360px; margin: 0 auto; display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 24px; padding: 20px 20px 40px; align-items: start; }
   @media (max-width: 960px) { .page-shell { grid-template-columns: 1fr; padding: 14px; } .sidebar { position: static !important; max-height: none !important; } .topbar-sub { display: none; } }
 
-  .sidebar { position: sticky; top: 56px; max-height: calc(100vh - 130px); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+  .sidebar { position: sticky; top: calc(var(--top-offset, 40px) + 16px); max-height: calc(100vh - 150px); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
   .brand-header { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
   .brand-kicker { font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 2px; }
   .brand-title { font-size: 16px; font-weight: 600; margin: 0 0 3px; color: var(--text); }
@@ -743,13 +1017,27 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .track-label { font-size: 12px; font-weight: 600; color: var(--text-muted); margin: 14px 0 6px; }
   .phase-track, .wave-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); gap: 6px; }
 
-  .phase-pill { border: 1px solid var(--border); background: var(--bg); border-radius: var(--radius); padding: 8px 10px; font-size: 12.5px; }
+  .phase-pill { appearance: none; text-align: left; font: inherit; width: 100%; cursor: pointer; border: 1px solid var(--border); background: var(--bg); border-radius: var(--radius); padding: 8px 10px; font-size: 12.5px; display: flex; flex-direction: column; gap: 2px; }
+  .phase-pill:hover { border-color: var(--accent); background: var(--accent-soft); }
   .phase-pill.done { background: var(--ok-bg); border-color: var(--ok-border); }
   .phase-pill.current { background: var(--accent-soft); border-color: var(--accent); }
-  .phase-pill-num { font-size: 12px; font-weight: 600; color: var(--text-muted); display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+  .phase-pill-num { font-size: 12px; font-weight: 600; color: var(--text-muted); display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; width: 100%; }
   .phase-pill.done .phase-pill-num { color: var(--ok); }
   .phase-pill.current .phase-pill-num { color: var(--accent); }
   .phase-pill-name { font-weight: 600; color: var(--text); margin-top: 2px; line-height: 1.25; }
+  .phase-pill-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; display: flex; justify-content: space-between; width: 100%; font-variant-numeric: tabular-nums; }
+
+  .phase-view { display: none; flex-direction: column; gap: 20px; }
+  .phase-view.active { display: flex; }
+  .overview-view { display: flex; flex-direction: column; gap: 20px; }
+  .overview-view.hidden { display: none; }
+  .phase-nav-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .phase-nav-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .phase-plan-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .phase-plan-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); font-size: 13.5px; flex-wrap: wrap; }
+  .phase-plan-main { display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 220px; }
+  .phase-plan-btns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .phase-criteria { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13.8px; }
 
   .wave-step { border: 1px solid var(--border); background: var(--bg); border-radius: var(--radius); padding: 7px 9px; font-size: 12px; }
   .wave-step.done { border-color: var(--ok-border); background: var(--ok-bg); }
@@ -759,7 +1047,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .wave-step.active .wave-step-top { color: var(--accent); }
   .wave-step-desc { color: var(--text-muted); margin-top: 2px; line-height: 1.25; }
 
-  .toolbar { position: sticky; top: 40px; z-index: 20; background: var(--bg); padding: 9px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .toolbar { position: sticky; top: var(--top-offset, 40px); z-index: 20; background: var(--bg); padding: 9px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
   .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
   .pill { appearance: none; border: 1px solid var(--border); background: var(--surface); color: var(--text-muted); font: inherit; font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; cursor: pointer; }
   .pill:hover { background: var(--surface-subtle); color: var(--text); }
@@ -768,7 +1056,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .pill.active .pill-badge { background: rgba(255, 255, 255, 0.25); color: var(--accent-fg); }
   .search-input { border: 1px solid var(--border-strong); background: var(--surface); border-radius: var(--radius-sm); padding: 6px 12px; font: inherit; font-size: 13px; color: var(--text); width: 240px; }
 
-  .section { scroll-margin-top: 100px; }
+  .section { scroll-margin-top: calc(var(--top-offset, 40px) + 60px); }
   .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
   .section-title { font-size: 17.5px; font-weight: 600; margin: 0; display: flex; align-items: center; gap: 8px; }
   .section-num { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 22px; padding: 0 6px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border); font-family: var(--mono); font-size: 12px; font-weight: 600; }
@@ -893,7 +1181,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .copy-status.show { opacity: 1; }
 </style>
 </head>
-<body>
+<body class="__BODY_CLASS__">
 
 <header class="topbar">
   <a href="/" class="btn btn-sm" id="allProjectsLink" style="display:none;">← Projects</a>
@@ -903,6 +1191,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <span class="spacer"></span>
   <button type="button" class="btn btn-sm" id="themeToggleBtn">Dark</button>
 </header>
+__PHASE_BAR__
 
 <div class="page-shell">
 
@@ -943,6 +1232,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <!-- MAIN COLUMN -->
   <main class="main-col">
+
+    <!-- DEDICATED PHASE DETAIL WORKSPACE -->
+    <div id="phaseView" class="phase-view" aria-live="polite"></div>
+
+    <!-- OVERVIEW WORKSPACE -->
+    <div id="overviewView" class="overview-view">
 
     <!-- HERO -->
     <section class="hero-card">
@@ -1013,6 +1308,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       </div>
     </section>
 
+    </div>
   </main>
 </div>
 
@@ -1062,6 +1358,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <script id="docs-data" type="application/json">__DOCS_JSON__</script>
 <script id="exec-log-data" type="application/json">__EXEC_LOG_JSON__</script>
 <script id="snapshots-data" type="application/json">__SNAPSHOTS_JSON__</script>
+<script id="phases-data" type="application/json">__PHASES_JSON__</script>
 
 <script>
 (function() {
@@ -1108,6 +1405,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   const DOCS = JSON.parse(document.getElementById("docs-data").textContent);
   let EXEC_LOG = JSON.parse(document.getElementById("exec-log-data").textContent);
   let SNAPSHOTS = JSON.parse(document.getElementById("snapshots-data").textContent);
+  const PHASES = JSON.parse(document.getElementById("phases-data").textContent);
+  let activePhaseNum = null;
   let state = loadState();
 
   function loadState() {
@@ -1694,6 +1993,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       if (d && Array.isArray(d.entries)) {
         EXEC_LOG = d.entries;
         renderExecLog(EXEC_LOG);
+        if (activePhaseNum !== null) renderPhaseView(activePhaseNum);
       }
     } catch (e) {}
   }
@@ -1715,6 +2015,347 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   }
 
   document.getElementById("refreshLogBtn").addEventListener("click", refreshLiveLog);
+
+  // Phase Navigation & Dedicated Phase Workspace
+  const phaseViewEl = document.getElementById("phaseView");
+  const overviewViewEl = document.getElementById("overviewView");
+  const phaseBarEl = document.getElementById("phaseBar");
+
+  function phaseNumForms(num) {
+    const s = String(num == null ? "" : num).trim();
+    const m = s.match(/^(\d+)(.*)$/);
+    if (!m) return [s];
+    const lead = parseInt(m[1], 10);
+    const rest = m[2] || "";
+    const a = String(lead) + rest;
+    const b = (lead < 10 ? "0" + lead : String(lead)) + rest;
+    return a === b ? [a] : [a, b];
+  }
+
+  function escapeRe(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function entryMatchesPhase(entry, phaseNum) {
+    const forms = phaseNumForms(phaseNum);
+    if (entry.phase != null && String(entry.phase).trim() !== "") {
+      const pVal = String(entry.phase).trim().toLowerCase().replace(/^phase\s+/, "");
+      return forms.some(f => f.toLowerCase() === pVal);
+    }
+    const hay = [entry.plan, entry.wave, entry.id].filter(Boolean).join(" ");
+    return forms.some(f => {
+      const ef = escapeRe(f);
+      return (
+        new RegExp("(^|[^0-9])" + ef + "-\\d+", "i").test(hay) ||
+        new RegExp("\\bphase\\s+" + ef + "\\b", "i").test(hay) ||
+        new RegExp("\\bp" + ef + "\\b", "i").test(hay)
+      );
+    });
+  }
+
+  function renderPhaseView(phaseNum) {
+    if (!phaseViewEl) return;
+    const idx = PHASES.findIndex(p => String(p.num) === String(phaseNum));
+    if (idx < 0) return;
+    const ph = PHASES[idx];
+    const prevPh = idx > 0 ? PHASES[idx - 1] : null;
+    const nextPh = idx + 1 < PHASES.length ? PHASES[idx + 1] : null;
+    const st = ph.state || "queued";
+    const badgeCls = st === "done" ? "badge-ok" : (st === "current" || st === "active" ? "badge-info" : "badge-neutral");
+    const badgeMap = { blocker: "badge-blocker", warn: "badge-warn", ok: "badge-ok", info: "badge-info", neutral: "badge-neutral" };
+    const matchedDocs = (ph.doc_ids || []).map(id => DOCS.find(d => d.id === id)).filter(Boolean);
+    const matchedLogs = (EXEC_LOG || []).filter(e => entryMatchesPhase(e, ph.num)).reverse();
+    const matchedSnaps = ph.snapshots || [];
+    const waves = ph.waves || [];
+    const criteria = ph.success_criteria || [];
+
+    const waveSummaryHtml = waves.length ? `
+      <div class="track-label">Phase Waves</div>
+      <div class="wave-track">
+        ${waves.map(w => {
+          const pls = w.plans || [];
+          const doneCnt = pls.filter(p => p.done).length;
+          const allDone = pls.length > 0 && doneCnt === pls.length;
+          const anyDone = doneCnt > 0;
+          const cls = allDone ? "wave-step done" : (anyDone ? "wave-step active" : "wave-step");
+          const stat = pls.length ? `${doneCnt}/${pls.length}` : "";
+          return `<div class="${cls}"><div class="wave-step-top"><span>${escapeHtml(w.label || "Wave")}</span><span>${escapeHtml(stat)}</span></div>${w.note ? `<div class="wave-step-desc">${escapeHtml(w.note)}</div>` : ""}</div>`;
+        }).join("")}
+      </div>` : "";
+
+    const wavesDetailHtml = waves.length ? `
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title"><span class="section-num">1</span> Waves &amp; Plans (${ph.plan_done || 0}/${ph.plan_total || 0})</h2>
+            <p class="section-desc">${ph.plans_summary ? formatInline(ph.plans_summary) : "Execution breakdown from ROADMAP.md."}</p>
+          </div>
+        </div>
+        <div class="card-stack">
+          ${waves.map(w => {
+            const pls = w.plans || [];
+            const doneCnt = pls.filter(p => p.done).length;
+            const wBadge = pls.length && doneCnt === pls.length ? "badge-ok" : (doneCnt > 0 ? "badge-info" : "badge-neutral");
+            return `
+              <article class="card">
+                <div class="card-top">
+                  <div class="card-title-wrap">
+                    <span class="badge ${wBadge}">${doneCnt}/${pls.length} done</span>
+                    <h3 class="card-title">${escapeHtml(w.label || "Plans")}</h3>
+                  </div>
+                  ${w.note ? `<span style="font-size:12px; color:var(--text-muted);">${escapeHtml(w.note)}</span>` : ""}
+                </div>
+                <ul class="phase-plan-list">
+                  ${pls.map(pl => `
+                    <li class="phase-plan-item">
+                      <div class="phase-plan-main">
+                        <span aria-hidden="true">${pl.done ? "✅" : "⬜"}</span>
+                        <div>
+                          ${pl.file ? `<code>${escapeHtml(pl.file)}</code> ` : ""}
+                          <span>${formatInline(pl.desc || pl.file || "")}</span>
+                        </div>
+                      </div>
+                      <div class="phase-plan-btns">
+                        ${pl.doc_id ? `<button type="button" class="btn btn-sm" data-modal-doc="${escapeHtml(pl.doc_id)}">Open Plan</button>` : ""}
+                        ${pl.summary_doc_id ? `<button type="button" class="btn btn-primary btn-sm" data-modal-doc="${escapeHtml(pl.summary_doc_id)}">Summary</button>` : ""}
+                      </div>
+                    </li>
+                  `).join("")}
+                </ul>
+              </article>`;
+          }).join("")}
+        </div>
+      </section>` : "";
+
+    const criteriaHtml = criteria.length ? `
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title"><span class="section-num">${waves.length ? "2" : "1"}</span> Success Criteria</h2>
+            <p class="section-desc">Conditions that must be true to close Phase ${escapeHtml(String(ph.num))}.</p>
+          </div>
+        </div>
+        <article class="card">
+          <ol class="phase-criteria">
+            ${criteria.map(c => `<li>${formatInline(c)}</li>`).join("")}
+          </ol>
+        </article>
+      </section>` : "";
+
+    const logsHtml = matchedLogs.length ? `
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title"><span class="section-num">CLI</span> Phase ${escapeHtml(String(ph.num))} Execution Log (${matchedLogs.length})</h2>
+            <p class="section-desc">Commands, results, and engineering takeaways recorded during Phase ${escapeHtml(String(ph.num))}.</p>
+          </div>
+        </div>
+        <div class="card-stack">
+          ${matchedLogs.map((entry, lidx) => {
+            const eid = "ph-" + slugifyId(String(ph.num)) + "-" + (entry.id || lidx);
+            return `
+              <article class="card card-log">
+                <div class="card-top">
+                  <div class="card-title-wrap">
+                    ${entry.wave ? `<span class="badge badge-info">${escapeHtml(entry.wave)}</span>` : ""}
+                    ${entry.tool ? `<span class="badge badge-decision">${escapeHtml(entry.tool)}</span>` : ""}
+                    <h3 class="card-title">${escapeHtml(entry.title || eid)}</h3>
+                  </div>
+                  <span style="font-size:12px; color:var(--text-soft);">${escapeHtml(entry.timestamp || "")}</span>
+                </div>
+                <div class="log-meta-bar">
+                  ${entry.plan ? `<span><strong>Plan:</strong> <code>${escapeHtml(entry.plan)}</code></span>` : ""}
+                  ${entry.plan && entry.arch_link ? "<span>·</span>" : ""}
+                  ${entry.arch_link ? `<span><strong>Maps to:</strong> ${escapeHtml(entry.arch_link)}</span>` : ""}
+                </div>
+                <div class="card-body">
+                  ${entry.command ? `
+                    <div class="cmd-head">
+                      <span style="font-size:12px; font-weight:700; color:var(--text-muted);">CLI Command(s) Run:</span>
+                      <button type="button" class="btn btn-sm" data-copy-cmd="${escapeHtml(eid)}">Copy</button>
+                    </div>
+                    <pre><code id="cmd-${escapeHtml(eid)}">${escapeHtml(entry.command)}</code></pre>
+                  ` : ""}
+                  <div class="log-grid">
+                    ${entry.parameters ? `<div class="log-box"><div class="log-box-label">Parameters &amp; Flags</div><div>${formatInline(entry.parameters)}</div></div>` : ""}
+                    ${entry.why ? `<div class="log-box"><div class="log-box-label">Why We Ran This</div><div>${formatInline(entry.why)}</div></div>` : ""}
+                  </div>
+                  ${entry.result ? `<div class="callout callout-ok"><strong>Observed Result:</strong> ${formatInline(entry.result)}</div>` : ""}
+                  ${entry.learning ? `<div class="callout callout-learn"><strong>Key Engineering Takeaway:</strong> ${formatInline(entry.learning)}</div>` : ""}
+                </div>
+              </article>`;
+          }).join("")}
+        </div>
+      </section>` : "";
+
+    const docsHtml = matchedDocs.length ? `
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h2 class="section-title"><span class="section-num">DOC</span> Phase ${escapeHtml(String(ph.num))} Documents (${matchedDocs.length})</h2>
+            <p class="section-desc">Plans, summaries, context, research, and verification docs for this phase.</p>
+          </div>
+        </div>
+        <div class="card-stack">
+          ${matchedDocs.map(doc => `
+            <article class="card">
+              <div class="card-top">
+                <div class="card-title-wrap">
+                  <span class="badge ${badgeMap[doc.status_kind] || "badge-neutral"}">${escapeHtml(doc.status)}</span>
+                  <h3 class="card-title">${escapeHtml(doc.title)}</h3>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm" data-modal-doc="${escapeHtml(doc.id)}">Open Reader</button>
+              </div>
+              <div class="doc-meta-row"><code>${escapeHtml(doc.rel_path)}</code><span>· ${doc.line_count} lines</span></div>
+              <div class="card-body"><p>${escapeHtml(doc.summary)}</p></div>
+            </article>
+          `).join("")}
+        </div>
+      </section>` : "";
+
+    const inSnapsDir = /\/snapshots\//.test(location.pathname);
+    const snapsHtml = matchedSnaps.length ? `
+      <section class="section">
+        <div class="section-head"><div><h2 class="section-title"><span class="section-num">SNAP</span> Phase Snapshots</h2></div></div>
+        <article class="card">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            ${matchedSnaps.map(s => {
+              const href = isHttp ? API_BASE + "/snapshots/" + encodeURIComponent(s.name) : (inSnapsDir ? "./" : "snapshots/") + encodeURIComponent(s.name);
+              return `<a class="btn btn-sm" href="${href}" target="_blank" rel="noopener">${escapeHtml(s.label || s.name)} ↗</a>`;
+            }).join("")}
+          </div>
+        </article>
+      </section>` : "";
+
+    const emptyDetail = (!waves.length && !criteria.length && !matchedLogs.length && !matchedDocs.length)
+      ? `<article class="card"><div class="card-body"><p>${escapeHtml(ph.deliverables || "No phase plans or docs created yet.")}</p></div></article>`
+      : "";
+
+    phaseViewEl.innerHTML = `
+      <section class="hero-card">
+        <div class="phase-nav-controls">
+          <button type="button" class="btn btn-sm" data-phase-overview>← Back to Overview</button>
+          <div class="phase-nav-group">
+            ${prevPh ? `<button type="button" class="btn btn-sm" data-phase-open="${escapeHtml(String(prevPh.num))}">← P${escapeHtml(String(prevPh.num))}</button>` : ""}
+            ${nextPh ? `<button type="button" class="btn btn-sm" data-phase-open="${escapeHtml(String(nextPh.num))}">P${escapeHtml(String(nextPh.num))} →</button>` : ""}
+          </div>
+        </div>
+        <div class="hero-top">
+          <div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+              <span class="badge ${badgeCls}">${escapeHtml(ph.status || st)}</span>
+              ${ph.plan_total ? `<span class="meta-chip info">${ph.plan_done || 0}/${ph.plan_total} plans</span>` : ""}
+              ${matchedDocs.length ? `<span class="meta-chip">${matchedDocs.length} docs</span>` : ""}
+              ${matchedLogs.length ? `<span class="meta-chip">${matchedLogs.length} CLI steps</span>` : ""}
+            </div>
+            <h1 class="hero-title">Phase ${escapeHtml(String(ph.num))}: ${escapeHtml(ph.name || "")}</h1>
+            ${ph.depends_on ? `<p class="hero-subtitle"><strong>Depends on:</strong> ${formatInline(ph.depends_on)}${ph.reqs ? ` · <strong>Requirements:</strong> <code>${escapeHtml(ph.reqs)}</code>` : ""}</p>` : (ph.reqs ? `<p class="hero-subtitle"><strong>Requirements:</strong> <code>${escapeHtml(ph.reqs)}</code></p>` : "")}
+          </div>
+        </div>
+        ${ph.goal ? `<div class="callout" style="margin-top:12px;"><strong>Phase Goal:</strong> ${formatInline(ph.goal)}</div>` : (ph.deliverables ? `<div class="callout" style="margin-top:12px;"><strong>Deliverables:</strong> ${formatInline(ph.deliverables)}</div>` : "")}
+        ${waveSummaryHtml}
+      </section>
+      ${wavesDetailHtml}
+      ${criteriaHtml}
+      ${logsHtml}
+      ${docsHtml}
+      ${snapsHtml}
+      ${emptyDetail}
+    `;
+  }
+
+  function slugifyId(s) {
+    return String(s).replace(/[^a-zA-Z0-9]+/g, "-");
+  }
+
+  function syncPhaseBar(activeVal) {
+    if (!phaseBarEl) return;
+    phaseBarEl.querySelectorAll(".phase-tab").forEach(tab => {
+      const isAct = tab.dataset.phaseTab === activeVal;
+      tab.classList.toggle("active", isAct);
+      if (isAct && tab.scrollIntoView) {
+        try { tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" }); } catch (e) {}
+      }
+    });
+  }
+
+  function openPhase(phaseNum, updateHash = true) {
+    const key = String(phaseNum);
+    if (!PHASES.some(p => String(p.num) === key)) return;
+    activePhaseNum = key;
+    renderPhaseView(key);
+    if (overviewViewEl) overviewViewEl.classList.add("hidden");
+    if (phaseViewEl) phaseViewEl.classList.add("active");
+    syncPhaseBar(key);
+    if (updateHash) {
+      try { history.replaceState(null, "", "#phase-" + encodeURIComponent(key)); } catch (e) {}
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function showOverview(updateHash = true) {
+    activePhaseNum = null;
+    if (phaseViewEl) phaseViewEl.classList.remove("active");
+    if (overviewViewEl) overviewViewEl.classList.remove("hidden");
+    syncPhaseBar("overview");
+    if (updateHash && /^#phase-/.test(location.hash)) {
+      try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    }
+  }
+
+  document.addEventListener("click", async e => {
+    const tab = e.target.closest("[data-phase-tab]");
+    if (tab) {
+      const val = tab.dataset.phaseTab;
+      if (val === "overview") showOverview(true);
+      else openPhase(val, true);
+      return;
+    }
+    const opener = e.target.closest("[data-phase-open]");
+    if (opener) {
+      openPhase(opener.dataset.phaseOpen, true);
+      return;
+    }
+    if (e.target.closest("[data-phase-overview]")) {
+      showOverview(true);
+      return;
+    }
+    if (phaseViewEl && phaseViewEl.contains(e.target)) {
+      const mb = e.target.closest("[data-modal-doc]");
+      if (mb) { openDocReaderModal(mb.dataset.modalDoc); return; }
+      const cp = e.target.closest("[data-copy-cmd]");
+      if (cp) {
+        const codeEl = document.getElementById("cmd-" + cp.dataset.copyCmd);
+        if (codeEl && navigator.clipboard) {
+          try {
+            await navigator.clipboard.writeText(codeEl.textContent);
+            const prev = cp.textContent;
+            cp.textContent = "Copied!";
+            setTimeout(() => { cp.textContent = prev; }, 1600);
+          } catch (err) {}
+        }
+      }
+    }
+  });
+
+  document.querySelectorAll("#sidebarNav .nav-link").forEach(a => {
+    a.addEventListener("click", () => {
+      if (activePhaseNum !== null) showOverview(false);
+    });
+  });
+
+  function syncFromHash() {
+    const m = location.hash.match(/^#phase-(.+)$/);
+    if (m) {
+      const target = decodeURIComponent(m[1]);
+      if (PHASES.some(p => String(p.num) === target)) {
+        openPhase(target, false);
+        return;
+      }
+    }
+    if (activePhaseNum !== null) showOverview(false);
+  }
+  window.addEventListener("hashchange", syncFromHash);
 
   async function hydrateFromServer() {
     if (!isHttp) return;
@@ -1747,6 +2388,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   buildDocumentLibrary();
   attachFormAndStaticControls();
   updateUIState();
+  syncFromHash();
   hydrateFromServer();
 })();
 </script>
@@ -1777,7 +2419,9 @@ def build_html(
     round_id = round_override or config.get("round_id") or "live"
     is_snapshot = bool(snapshot_label)
 
-    phases = config.get("phases") or parse_roadmap_phases(root)
+    roadmap_phases = parse_roadmap_phases(root)
+    raw_phases = config.get("phases") or roadmap_phases
+    phases = enrich_phases(raw_phases, roadmap_phases, docs, snapshots)
     waves = config.get("waves") or []
     checkpoint = None if is_snapshot else config.get("checkpoint")
 
@@ -1822,6 +2466,8 @@ def build_html(
     safe_json = lambda obj: json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
 
     replacements = {
+        "__BODY_CLASS__": "has-phase-bar" if phases else "",
+        "__PHASE_BAR__": render_phase_bar(phases),
         "__PROJECT_NAME__": html_lib.escape(project_name),
         "__BRAND_SUB__": html_lib.escape(brand_sub),
         "__STATUS_BOX_CLASS__": "snapshot-mode" if is_snapshot else "",
@@ -1848,6 +2494,7 @@ def build_html(
         "__DOCS_JSON__": safe_json(docs),
         "__EXEC_LOG_JSON__": safe_json(exec_log),
         "__SNAPSHOTS_JSON__": safe_json(snapshots),
+        "__PHASES_JSON__": safe_json(phases),
     }
 
     out = HTML_TEMPLATE

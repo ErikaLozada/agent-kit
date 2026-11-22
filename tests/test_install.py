@@ -404,6 +404,23 @@ class InstallTests(unittest.TestCase):
 
         # Build a living project hub + snapshot AND register into a temp multi-project registry
         self.configure()
+        Path(self.proj, '.planning/phases/01-setup').mkdir(parents=True, exist_ok=True)
+        Path(self.proj, '.planning/ROADMAP.md').write_text(
+            "# Roadmap\n\n"
+            "- [x] **Phase 1: Setup** - Baseline setup\n"
+            "- [ ] **Phase 2: Build** - Core implementation\n\n"
+            "### Phase 1: Setup\n"
+            "**Goal**: Establish baseline workspace.\n"
+            "**Depends on**: Nothing\n"
+            "**Requirements**: REQ-01\n"
+            "**Success Criteria**:\n"
+            "  1. Workspace initialized.\n"
+            "**Wave 1**\n"
+            "- [x] 01-01-PLAN.md — Initial baseline\n",
+            encoding='utf-8',
+        )
+        Path(self.proj, '.planning/phases/01-setup/01-01-PLAN.md').write_text("# Plan 01-01\nDetails.\n", encoding='utf-8')
+        Path(self.proj, '.planning/phases/01-setup/01-01-SUMMARY.md').write_text("# Summary 01-01\nDone.\n", encoding='utf-8')
         reg_file = os.path.join(os.path.dirname(self.proj), 'projects.json')
         out = self.sh('python3', os.path.join(KIT, 'skills/living-project-hub/scripts/build_hub.py'),
                       '--root', self.proj, '--snapshot', 'phase-01-init',
@@ -415,6 +432,10 @@ class InstallTests(unittest.TestCase):
         snap_html = Path(self.proj, '.scratch/snapshots/phase-01-init.html').read_text(encoding='utf-8')
         self.assertIn('Living Project &amp; Learning Hub', hub_html)
         self.assertIn('phase-01-init.html', hub_html)
+        self.assertIn('data-phase-tab="1"', hub_html)
+        self.assertIn('data-phase-open="1"', hub_html)
+        self.assertIn('Establish baseline workspace.', hub_html)
+        self.assertIn('summary_doc_id', hub_html)
         self.assertIn('SNAPSHOT', snap_html)
         self.assertNotIn('Microsoft Fabric', hub_html)
 
