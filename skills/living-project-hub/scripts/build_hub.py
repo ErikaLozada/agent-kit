@@ -17,6 +17,8 @@ Usage:
     # Optional overrides via .scratch/hub-config.json (phases, waves, checkpoint, round_id)
 """
 
+from __future__ import annotations
+
 import argparse
 import html as html_lib
 import json
