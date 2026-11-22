@@ -3,85 +3,109 @@
 A lightweight, harness- and model-agnostic starter kit that boots every project with shared agent instructions, enforceable code guardrails, and learned lessons from previous sessions — scaling cleanly from a single coding agent to a parallel team.
 
 It works with Claude Code, Codex, pi, Gemini / Antigravity, Hermes, or any CLI via pluggable commands (`TEST_CMD`, `DEPLOY_CMD`, `REVIEW_CMD`, `WORKER_CMD`), and separates:
-- a **tiny per-project template** (`template/`): lean `AGENTS.md` (< 3 KB), pre-commit hooks, explicit test outcomes, guarded deploys, and worktree/review scripts;
+- a **tiny per-project template** (`template/`): lean `AGENTS.md` (< 3 KB), pre-commit hooks, explicit test outcomes, guarded deploys, and review/worktree scripts;
 - **global skills** (`skills/`): linked once per machine (`install.sh --link-skills`) so improvements reach every project without copying heavy tooling into every repo.
 
-It wasn't designed up front. It was extracted from real multi-agent builds — including [Crate Digger](https://github.com/ErikaLozada/crate-digger) and [reel-kit](https://github.com/ErikaLozada/reel-kit) — keeping what worked and turning recurring failures into code guards or short rules.
+Extracted from real multi-agent builds — including [Crate Digger](https://github.com/ErikaLozada/crate-digger) and [reel-kit](https://github.com/ErikaLozada/reel-kit) — turning recurring agent mistakes into deterministic code guards or concise rules.
 
-## Why this exists
+---
 
-Agents repeat the same predictable mistakes across projects unless rules live in shared files and code:
-- lessons stay trapped in chat history or one harness's private memory;
-- tests get skipped silently when a runtime is missing or no tests exist yet;
-- evaluation labels or protected files get modified accidentally;
-- deploys run from a dirty tree or unverified branch;
-- a fix changes code without re-checking the original failing case;
-- parallel agents edit the same files without contracts or independent review.
-
-`agent-kit` answers each with a deterministic code guard where possible, and concise, harness-neutral rules everywhere else.
-
-## Principles
-
-- **What must always happen goes in code** (hooks, `make`). **Judgement goes in a skill.** **Project facts and rules go in `AGENTS.md`** — one file every harness reads, kept under 3 KB.
-- **Harness- and model-agnostic:** no hardcoded vendor model IDs in project templates; configure your preferred tiers once in `~/.config/agent-kit/tiers.conf` or plug in any CLI.
-- **One owner per fact & continuous learning:** capture session lessons with the `wrap-up` skill while context is hot, route each to its single owning file (`docs/decisions.md`, `AGENTS.md`, an external stack overlay, or `agent-kit`), and keep `template/` featherweight.
-- **Explicit test outcomes:** missing required runtimes and empty suites fail; `NOT_EVALUATED` never masquerades as `PASS`; bootstrap commits (`ALLOW_NO_TESTS=1 git commit`) stay visible and can never deploy.
-
-## What a project gets (`template/`)
-
-`bash install.sh <folder> "<Name>"` works on new or existing folders, never overwrites an existing file, and never silently disables existing git hooks.
-
-| File | Purpose |
-| --- | --- |
-| `AGENTS.md`, `CLAUDE.md` | Shared instructions for every harness, under 3 KB: commands, outside-the-repo rules, data, gates, defaults, working speed, conventions, glossary |
-| `agent-kit.conf` | Project settings: `TEST_CMD`, `DEPLOY_CMD` / `SERVICE`, `HEALTH_URL`, `REVIEW_CMD`, `WORKER_CMD`, worktree `LINKS`/`OWN`, `PROTECTED` files |
-| `Makefile` | `test`, `review`, `status`, `deploy`, `setup`, `task`, `worker`, `finish` |
-| `.githooks/pre-commit` | Runs `make test` on every commit; blocks `PROTECTED` edits, enforces append-only `docs/decisions.md`, and scans staged diffs for secrets |
-| `scripts/` | Explicit test runner, read-only headless / tabbed cross-agent review, guarded deploy, worktree task lifecycle, worker launcher, status |
-| `docs/decisions.md` | Append-only decision log |
-| `.agents/skills/ship-feature` | Project-local checklist for solo work or workers under a lead (`.claude/skills` symlinks to `.agents/skills`) |
-
-## Global skills (`skills/`)
-
-Run `bash install.sh --link-skills` once per machine to symlink `skills/*` into every installed harness (`~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, `~/.gemini/config/skills`, `~/.pi/agent/skills`, `~/.hermes/skills`, plus optional `AGENT_SKILLS_DIRS`):
-
-| Skill | Purpose |
-| --- | --- |
-| `new-project` | Runs `install.sh`, fills in `AGENTS.md` gates/defaults and `agent-kit.conf`, logs initial decisions |
-| `wrap-up` | 2-minute end-of-session hygiene & lesson capture: checks git state, mines real friction, routes approved lessons to their one owning file |
-| `ship-with-agents` | Lead orchestration for parallel work: plan with owned files & failure cases, start workers, relay prompts, cross-provider review, merge |
-| `session-retro` | Quantitative retrospective from Claude Code, Codex, and pi transcripts, published as a Fern & Stone HTML page |
-| `interactive-html-brief` | Turns long reviews, plans, and audits into Fern & Stone interactive HTML pages (Light default + Dark toggle) with single-prompt feedback export |
-| `living-project-hub` | Multi-phase project & learning control center (progress tracks, execution/CLI log, Markdown library, frozen phase snapshots, feedback save-back) |
-
-## Quick start
+## 1. One-time machine setup
 
 ```sh
-git clone https://github.com/ErikaLozada/agent-kit.git
+git clone https://github.com/ErikaLozada/agent-kit.git ~/projects/agent-kit
 
-# 1. Once per machine: link global skills into all installed harnesses
-bash agent-kit/install.sh --link-skills
+# Link global skills into every installed harness
+# (~/.claude, ~/.agents, ~/.codex, ~/.gemini/config, ~/.pi/agent, ~/.hermes + $AGENT_SKILLS_DIRS)
+bash ~/projects/agent-kit/install.sh --link-skills
 
-# 2. Start a new project (or adopt an existing folder safely)
-bash agent-kit/install.sh ~/projects/my-project "My Project"
-
-# Optional: layer a separate domain/stack overlay (e.g. your own private stack kit)
-bash agent-kit/install.sh ~/projects/my-project "My Project" --overlay /path/to/my-overlay
-
-# Optional: check an already-installed project for missing or customized kit files (read-only)
-bash agent-kit/install.sh --check ~/projects/my-project
+# Verify the kit works on your machine (Linux or macOS)
+make -C ~/projects/agent-kit test
 ```
 
-### Optional: Interactive HTML briefs across devices
+Optional one-time machine extras:
+- **Personal worker model tiers** (keeps vendor model IDs out of project repos): create `~/.config/agent-kit/tiers.conf` — see [`skills/ship-with-agents/references/models.md`](skills/ship-with-agents/references/models.md).
+- **Interactive HTML briefs across devices** (light/dark Fern & Stone briefs served privately over Tailscale HTTPS):
+  ```sh
+  bash ~/projects/agent-kit/skills/interactive-html-brief/scripts/setup-briefs-server.sh
+  ```
+  See [`skills/interactive-html-brief/README.md`](skills/interactive-html-brief/README.md) for Tailscale Serve & security setup.
 
-`skills/interactive-html-brief` turns long agent reviews and plans into light-mode HTML pages you can annotate from a laptop, tablet, or phone over private Tailscale HTTPS and copy back as a single prompt. To enable the hardened local server + `publish-brief` CLI on Linux or macOS (zero hostnames committed to git), see [`skills/interactive-html-brief/README.md`](skills/interactive-html-brief/README.md):
+---
+
+## 2. Starting a new project (Day-1 checklist)
+
+Or simply ask any linked agent to run the **`new-project`** skill.
 
 ```sh
-bash agent-kit/install.sh --link-skills
-bash agent-kit/skills/interactive-html-brief/scripts/setup-briefs-server.sh
+# 1. Scaffold a new project (or adopt an existing folder safely — never overwrites files or existing hooks)
+bash ~/projects/agent-kit/install.sh ~/projects/my-project "My Project"
+
+# Optional: layer a separate domain/stack overlay (e.g. a private stack kit)
+bash ~/projects/agent-kit/install.sh ~/projects/my-project "My Project" --overlay /path/to/my-overlay
+
+cd ~/projects/my-project
+
+# 2. Fill in AGENTS.md (< 3 KB: goal, outside-the-repo rules, data/never-read, gates, defaults)
+# 3. Configure agent-kit.conf (TEST_CMD, DEPLOY_CMD/SERVICE, PROTECTED, LINKS/OWN if multi-agent)
+
+# 4. Baseline commit (if you have no tests yet, ALLOW_NO_TESTS=1 permits bootstrap as NOT_EVALUATED)
+git add AGENTS.md CLAUDE.md Makefile agent-kit.conf .gitignore .githooks .agents .claude docs scripts
+ALLOW_NO_TESTS=1 git commit -m "chore: bootstrap project with agent-kit"
 ```
 
-## Scaling to parallel agents
+When adopting an **existing repository**:
+- `install.sh` skips any file already present (prints `kept ...`) and never silently overrides an existing `core.hooksPath` or `.git/hooks/pre-commit`. Run `make setup` if you want to switch to `.githooks`, or chain `.githooks/pre-commit` from your existing hook.
+- Check drift anytime (read-only): `bash ~/projects/agent-kit/install.sh --check ~/projects/my-project`.
+
+---
+
+## 3. Command & shortcut cheat sheet
+
+### Project `make` commands
+
+| Command | What it does |
+| --- | --- |
+| `make test` | Runs `TEST_CMD`, or discovers Python (`tests/test_*.py`) and Node (`tests/*.test.*js`) suites with explicit `PASS` / `FAIL` / `SKIP` / `NOT_EVALUATED` outcomes |
+| `make review KIND=codex\|claude\|pi\|gemini [BASE=ref] [MODEL=m]` | Runs an independent second-agent diff review (read-only in headless mode; repo-scoped tab inside `herdr`). Override with `REVIEW_CMD=...` or preview with `DRY=1` |
+| `make deploy` | Deploys from a clean `main` branch only after `scripts/test.sh --require-tests` passes; runs `DEPLOY_CMD` (or `SERVICE` systemd restart), checks `HEALTH_URL`, logs to `.deploys.log` |
+| `make setup` | Once per fresh clone: enables `.githooks/pre-commit` (`git config core.hooksPath .githooks`) |
+| `make status` | Shows last deploy / service state and every active git worktree's branch, dirty count, and `TASK.md` owner/status |
+| `make task NAME=<slug> [OWNER=<who>]` | Creates sibling worktree + branch, symlinks `LINKS` (skipping `OWN`), assigns a free `TEST_PORT`, and scaffolds `TASK.md` |
+| `make worker NAME=<slug> TIER=simple\|medium\|complex` | Creates the task worktree and launches a bounded worker (reads `~/.config/agent-kit/tiers.conf`, or pass `KIND=... MODEL=... EFFORT=...`, or set `WORKER_CMD`, or `DRY=1`) |
+| `make finish NAME=<slug>` | Removes a task's worktree and branch **only** after it is merged into `main` with no uncommitted tracked changes |
+
+### Commit & installer shortcuts
+
+| Shortcut / env flag | When to use |
+| --- | --- |
+| `ALLOW_NO_TESTS=1 git commit ...` | Initial scaffolding commit before any tests exist (reported `NOT_EVALUATED`, never `PASS`; never allowed on `make deploy`) |
+| `USER_OK=1 git commit ...` | Human-approved edit to a `PROTECTED` file or an intentional rewrite of append-only `docs/decisions.md` |
+| `ALLOW_SECRET_MATCH=1 git commit ...` | Explicit bypass if a synthetic test fixture triggers the pre-commit secret-pattern scanner |
+| `DRY=1 make review ...` / `DRY=1 make worker ...` | Prints the exact commands that would run without launching an agent |
+| `install.sh --link-skills` | Symlinks `skills/*` into all installed agent harnesses (rerun after `git pull`) |
+| `install.sh --check <dir>` | Read-only drift report (`ok` / `customized` / `missing` / `project`) against `template/` |
+| `install.sh <dir> "Name" --overlay <path-or-name>` | Layers an external domain/stack overlay (`AGENTS.append.md`, `.gitignore.append`, extra files) |
+
+---
+
+## 4. Which options to enable for your project
+
+### Mode A — Solo / standard project (default)
+Works out of the box with minimal config in `agent-kit.conf`:
+1. Set `TEST_CMD` (or leave empty to auto-run `tests/test_*.py` and `tests/*.test.*js`; set `OPTIONAL_TEST_SUITES="javascript"` if a runtime is optional).
+2. Set `DEPLOY_CMD` (any OS/stack: Docker, CLI, static host) or `SERVICE` (Linux `systemd --user`) + optional `HEALTH_URL`.
+3. List human-only files (eval labels, golden fixtures, answer keys) in `PROTECTED="..."`.
+4. Use **`make review KIND=<other-agent>`** before big merges, and run the **`wrap-up`** skill at the end of a workday to capture and route real lessons while context is fresh.
+
+### Mode B — Multi-agent parallel workflow
+Enable these options in `agent-kit.conf` + your machine config when running 2+ agents in parallel with the **`ship-with-agents`** lead skill:
+1. **Worktree data sharing (`agent-kit.conf`):**
+   - `LINKS="data/* .env"` — untracked files/folders each task worktree symlinks from main.
+   - `OWN="data/live.json"` — subset of `LINKS` that each worktree keeps isolated (never shared with the live app).
+   - `TEST_PORT=8001` and `TEST_SERVER="python3 -m http.server {PORT}"` — gives every worktree its own free port in `TASK.md`.
+2. **Model tiers (`~/.config/agent-kit/tiers.conf`):** map `TIER_SIMPLE_*`, `TIER_MEDIUM_*`, `TIER_COMPLEX_*` to your preferred harnesses/models (or set `WORKER_CMD` / `REVIEW_CMD` in `agent-kit.conf` for custom CLIs).
+3. **Agent channel:** Inside [herdr](https://herdr.dev) (`HERDR_ENV=1`), `make worker` and `make review` open dedicated tabs automatically. Outside herdr, `make worker` creates the isolated worktree and `make review` runs headless read-only.
 
 ```mermaid
 flowchart TB
@@ -93,7 +117,7 @@ flowchart TB
     w2["Worker B"]
   end
   review["Independent reviewer<br/>(make review KIND=...)"]
-  main[("main<br/>pre-commit hook: tests,<br/>protected files")]
+  main[("main<br/>pre-commit hook: tests,<br/>protected files, secrets")]
 
   user <--> lead
   lead --> plan --> w1 & w2
@@ -103,7 +127,65 @@ flowchart TB
   lead -- "commits, merges;<br/>deploys only on go-ahead" --> main
 ```
 
-Requirements: `git`, `bash`, and `python3` (Linux and macOS). [herdr](https://herdr.dev) and multiple agent CLIs are optional; without them, every script works cleanly with headless CLIs or your harness's native subagents. Run `make test` to verify the kit on your machine. Full details are in [`docs/guide.md`](docs/guide.md).
+### Mode C — Multi-phase / GSD projects (`.planning/`)
+`agent-kit` stays decoupled from any specific planning framework, and pairs cleanly with multi-phase planners like **`gsd-core`** when building large projects from scratch with cross-stage dependencies:
+- **When to add GSD:** Multi-phase builds with ordered dependencies, early assumption probes, and multi-day state tracking (`.planning/STATE.md`, `ROADMAP.md`, wave plans). Skip GSD for small tools, prototypes, or single-feature changes where `agent-kit` + `ship-feature` is much faster.
+- **What to enable alongside GSD:**
+  1. **Keep local planner/tool caches out of Git:** `template/.gitignore` already ignores `.scratch/` and `.claude/settings.local.json`; add any repo-local generated agent folders you don't want committed and stage explicit paths (avoid blind `git add -A`).
+  2. **Enable the Living Project & Learning Hub (`living-project-hub` skill):** auto-discovers `.planning/` roadmaps, plans, summaries, `docs/`, and `.scratch/execution-log.json` into a Fern & Stone control center:
+     ```sh
+     HUB_SKILL="$(cd -P ~/.agents/skills/living-project-hub && pwd)"
+     python3 "$HUB_SKILL/scripts/build_hub.py"                          # build .scratch/project-hub.html
+     python3 "$HUB_SKILL/scripts/build_hub.py" --snapshot phase-01-init # freeze phase snapshot
+     python3 "$HUB_SKILL/scripts/hub_server.py" --host 127.0.0.1 --port 8765
+     ```
+     *(For remote tablet/laptop access over Tailscale, pass `--host "$(tailscale ip -4)"`.)*
+  3. **Capture lessons continuously:** Run **`wrap-up`** at the end of a session to distill traps from `.scratch/execution-log.json` into `AGENTS.md` / `docs/decisions.md` / overlays; run **`session-retro`** at major milestones for full transcript timing analysis.
+
+### Mode D — Stack / domain overlays (`--overlay`)
+Keep `agent-kit` 100% generic. Put stack- or domain-specific rules in a separate folder or repo (default search path: `~/.config/agent-kit/overlays/<name>`, or pass any directory path):
+```text
+my-stack-overlay/
+  STACK.md             # copied into the project (supports {{PROJECT}} and {{DATE}})
+  AGENTS.append.md     # idempotently appended to AGENTS.md with an overlay marker
+  .gitignore.append    # lines merged idempotently into .gitignore
+```
+Install with: `bash agent-kit/install.sh ~/projects/app "App" --overlay /path/to/my-stack-overlay`.
+
+---
+
+## 5. What is included
+
+### Per-project template (`template/`)
+
+| File | Purpose |
+| --- | --- |
+| `AGENTS.md`, `CLAUDE.md` | Shared instructions for every harness (< 3 KB): commands, outside-the-repo rules, data, gates, defaults, working speed, conventions, glossary |
+| `agent-kit.conf` | Project settings: `TEST_CMD`, `DEPLOY_CMD` / `SERVICE`, `HEALTH_URL`, `REVIEW_CMD`, `WORKER_CMD`, worktree `LINKS`/`OWN`, `PROTECTED` files |
+| `Makefile` | `test`, `review`, `status`, `deploy`, `setup`, `task`, `worker`, `finish` |
+| `.githooks/pre-commit` | Runs `make test`, guards `PROTECTED` files, enforces append-only `docs/decisions.md`, and scans staged diffs for secrets (filenames/counts only) |
+| `scripts/` | Explicit test runner, read-only headless / tabbed review, guarded deploy, worktree lifecycle, tier-configurable worker launcher, status |
+| `docs/decisions.md` | Append-only decision log |
+| `.agents/skills/ship-feature` | Project-local checklist for solo work or workers under a lead (`.claude/skills` symlinks to `.agents/skills`) |
+
+### Global skills (`skills/`, linked via `--link-skills`)
+
+| Skill | Purpose |
+| --- | --- |
+| `new-project` | Runs `install.sh`, fills in `AGENTS.md` gates/defaults and `agent-kit.conf`, logs initial decisions |
+| `wrap-up` | 2-minute end-of-session hygiene & lesson capture: checks git state, mines session friction, routes approved lessons to their one owning file |
+| `ship-with-agents` | Lead orchestration for parallel work: plan with owned files & failure cases, start workers, relay prompts, cross-provider review, merge |
+| `session-retro` | Quantitative retrospective from Claude Code, Codex, and pi transcripts, published as a Fern & Stone HTML page |
+| `interactive-html-brief` | Turns long reviews, plans, and audits into Fern & Stone interactive HTML pages (Light default + Dark toggle) with single-prompt feedback export |
+| `living-project-hub` | Multi-phase project & learning control center (progress tracks, execution/CLI log, Markdown library, frozen phase snapshots, feedback save-back) |
+
+---
+
+## Principles & requirements
+
+- **Code enforces invariants; skills hold judgement; `AGENTS.md` holds concise project rules (< 3 KB).**
+- **One owner per fact:** rules in `AGENTS.md`, choices in `docs/decisions.md`, stack rules in overlays, universal workflows in `agent-kit`.
+- **Requirements:** `git`, `bash`, and `python3` (Linux and macOS). [herdr](https://herdr.dev) and multiple agent CLIs are optional. Full details in [`docs/guide.md`](docs/guide.md).
 
 ## Licence
 
