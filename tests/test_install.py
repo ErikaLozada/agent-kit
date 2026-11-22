@@ -69,6 +69,13 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.read('AGENTS.md'), 'mine\n')
         self.assertIn('kept     AGENTS.md', out)
 
+    def test_install_into_dot_uses_directory_basename(self):
+        repo = os.path.join(os.path.dirname(self.proj), 'my-cool-repo')
+        os.makedirs(repo)
+        self.sh('bash', os.path.join(KIT, 'install.sh'), '.', cwd=repo)
+        self.assertIn('# my-cool-repo', open(os.path.join(repo, 'AGENTS.md')).read())
+        self.assertIn('PROJECT="my-cool-repo"', open(os.path.join(repo, 'agent-kit.conf')).read())
+
     def test_preserves_existing_git_hooks(self):
         base = os.path.dirname(self.proj)
         # 1. Existing custom core.hooksPath is not overwritten

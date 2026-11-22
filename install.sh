@@ -85,7 +85,6 @@ while [ $# -gt 0 ]; do
 done
 
 DIR="${POSITIONAL[0]:-}"
-NAME="${POSITIONAL[1]:-$(basename "${DIR%/}")}"
 [ -n "$DIR" ] || { echo "usage: install.sh <project folder> [\"Project Name\"] [--overlay <path-or-name>]..."; exit 1; }
 
 # Validate overlays before touching the target folder
@@ -106,6 +105,7 @@ for ov in "${OVERLAYS[@]}"; do
 done
 
 mkdir -p "$DIR"; cd "$DIR"
+NAME="${POSITIONAL[1]:-$(basename "$PWD")}"
 [ -d .git ] || git init -q -b main
 
 copied=(); skipped=(); notes=()

@@ -12,51 +12,76 @@ Extracted from real multi-agent builds — including [Crate Digger](https://gith
 
 ## 1. One-time machine setup
 
+Clone `agent-kit` **once**, anywhere you normally keep your repositories (it stays a standalone kit repo — do **not** clone it inside your project):
+
 ```sh
-git clone https://github.com/ErikaLozada/agent-kit.git ~/projects/agent-kit
+git clone https://github.com/ErikaLozada/agent-kit.git
+cd agent-kit
 
 # Link global skills into every installed harness
 # (~/.claude, ~/.agents, ~/.codex, ~/.gemini/config, ~/.pi/agent, ~/.hermes + $AGENT_SKILLS_DIRS)
-bash ~/projects/agent-kit/install.sh --link-skills
+bash install.sh --link-skills
 
-# Verify the kit works on your machine (Linux or macOS)
-make -C ~/projects/agent-kit test
+# Optional: verify the kit passes all self-tests on your machine (Linux or macOS)
+make test
 ```
 
 Optional one-time machine extras:
 - **Personal worker model tiers** (keeps vendor model IDs out of project repos): create `~/.config/agent-kit/tiers.conf` — see [`skills/ship-with-agents/references/models.md`](skills/ship-with-agents/references/models.md).
 - **Interactive HTML briefs across devices** (light/dark Fern & Stone briefs served privately over Tailscale HTTPS):
   ```sh
-  bash ~/projects/agent-kit/skills/interactive-html-brief/scripts/setup-briefs-server.sh
+  bash skills/interactive-html-brief/scripts/setup-briefs-server.sh
   ```
   See [`skills/interactive-html-brief/README.md`](skills/interactive-html-brief/README.md) for Tailscale Serve & security setup.
 
 ---
 
-## 2. Starting a new project (Day-1 checklist)
+## 2. Install into a new or existing project (Day-1 checklist)
 
-Or simply ask any linked agent to run the **`new-project`** skill.
+`install.sh` copies the starter files **directly into the root of your project repository** (nothing is nested inside an `agent-kit/` or `projects/` subfolder). You can also ask any linked agent to run the **`new-project`** skill.
 
+**Option A — Add to an existing repository (from your repo root):**
 ```sh
-# 1. Scaffold a new project (or adopt an existing folder safely — never overwrites files or existing hooks)
-bash ~/projects/agent-kit/install.sh ~/projects/my-project "My Project"
+cd /path/to/your-repo
+bash /path/to/agent-kit/install.sh .
+# (Optional second argument sets the display name, e.g. install.sh . "My App"; defaults to the folder name)
+```
 
-# Optional: layer a separate domain/stack overlay (e.g. a private stack kit)
-bash ~/projects/agent-kit/install.sh ~/projects/my-project "My Project" --overlay /path/to/my-overlay
+**Option B — Create a brand-new repository from scratch:**
+```sh
+bash /path/to/agent-kit/install.sh /path/to/my-app "My App"
+cd /path/to/my-app
+```
 
-cd ~/projects/my-project
+*(Optional: append `--overlay /path/to/my-overlay` to either command to layer a separate domain/stack kit on top.)*
 
-# 2. Fill in AGENTS.md (< 3 KB: goal, outside-the-repo rules, data/never-read, gates, defaults)
-# 3. Configure agent-kit.conf (TEST_CMD, DEPLOY_CMD/SERVICE, PROTECTED, LINKS/OWN if multi-agent)
+**What lands at the root of your repo:**
+```text
+my-app/
+├── AGENTS.md                 # Shared rules for every agent (< 3 KB) — fill in your TODOs
+├── CLAUDE.md                 # Imports @AGENTS.md
+├── Makefile                  # make test / review / deploy / status / setup / task / worker / finish
+├── agent-kit.conf            # Project config (TEST_CMD, DEPLOY_CMD, PROTECTED, LINKS/OWN)
+├── .gitignore                # Ignores TASK.md, .reviews/, .scratch/, local caches & keys
+├── .githooks/pre-commit      # Enforces tests, PROTECTED files, append-only decisions, secret scan
+├── .agents/skills/           # Project-local ship-feature checklist (.claude/skills symlinks here)
+├── docs/decisions.md         # Append-only decision log
+└── scripts/                  # test.sh, review.sh, deploy.sh, status.sh, worktree/worker scripts
+```
 
-# 4. Baseline commit (if you have no tests yet, ALLOW_NO_TESTS=1 permits bootstrap as NOT_EVALUATED)
+**Get going in 3 steps:**
+```sh
+# 1. Fill in AGENTS.md (< 3 KB: what it is, outside-the-repo rules, data/never-read, gates, defaults)
+# 2. Configure agent-kit.conf (TEST_CMD, DEPLOY_CMD or SERVICE, PROTECTED, LINKS/OWN if multi-agent)
+# 3. Make your baseline commit (if you have no tests yet, ALLOW_NO_TESTS=1 permits bootstrap as NOT_EVALUATED)
 git add AGENTS.md CLAUDE.md Makefile agent-kit.conf .gitignore .githooks .agents .claude docs scripts
 ALLOW_NO_TESTS=1 git commit -m "chore: bootstrap project with agent-kit"
 ```
 
 When adopting an **existing repository**:
-- `install.sh` skips any file already present (prints `kept ...`) and never silently overrides an existing `core.hooksPath` or `.git/hooks/pre-commit`. Run `make setup` if you want to switch to `.githooks`, or chain `.githooks/pre-commit` from your existing hook.
-- Check drift anytime (read-only): `bash ~/projects/agent-kit/install.sh --check ~/projects/my-project`.
+- `install.sh` **never overwrites** an existing file (it prints `kept ...` so you can merge `AGENTS.md`, `Makefile`, or `.gitignore` on your own terms).
+- `install.sh` **never silently disables** an existing `core.hooksPath` or `.git/hooks/pre-commit` — run `make setup` to opt into `.githooks`, or chain `.githooks/pre-commit` from your existing hook.
+- Check drift anytime (read-only): `bash /path/to/agent-kit/install.sh --check .` (from your repo root).
 
 ---
 
@@ -150,7 +175,7 @@ my-stack-overlay/
   AGENTS.append.md     # idempotently appended to AGENTS.md with an overlay marker
   .gitignore.append    # lines merged idempotently into .gitignore
 ```
-Install with: `bash agent-kit/install.sh ~/projects/app "App" --overlay /path/to/my-stack-overlay`.
+Install with: `bash /path/to/agent-kit/install.sh . --overlay /path/to/my-stack-overlay` (or target a new repo path).
 
 ---
 

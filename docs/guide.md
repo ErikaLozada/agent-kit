@@ -4,10 +4,17 @@ A lightweight, harness- and model-agnostic starting kit for AI-assisted projects
 
 ## Setup & commands
 
+Clone `agent-kit` once anywhere you keep repositories, link global skills once per machine, then run `install.sh` targeting the **root** of any new or existing project repository:
+
 ```sh
-git clone <repo-url> ~/lab/agent-kit
-bash ~/lab/agent-kit/install.sh --link-skills
-bash ~/lab/agent-kit/install.sh ~/projects/my-project "My Project"
+git clone https://github.com/ErikaLozada/agent-kit.git
+bash /path/to/agent-kit/install.sh --link-skills
+
+# Existing repo (from repo root — defaults project name to folder name):
+bash /path/to/agent-kit/install.sh .
+
+# Or create a brand-new repo at any path:
+bash /path/to/agent-kit/install.sh /path/to/my-app "My App"
 ```
 
 - **Linking skills (`--link-skills`):** Symlinks `skills/*` into every existing global skills directory (`~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills`, `~/.gemini/config/skills`, `~/.pi/agent/skills`, `~/.hermes/skills`, plus any colon-separated paths in `AGENT_SKILLS_DIRS`). Never replaces an existing skill or foreign link. Because skills are symlinks, `git pull` updates them everywhere at once.
