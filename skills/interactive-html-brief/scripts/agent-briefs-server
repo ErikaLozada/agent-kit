@@ -1,0 +1,1073 @@
+#!/usr/bin/env python3
+"""Hardened, zero-dependency HTTP server for harness-agnostic HTML briefs.
+
+Serves .html files from ~/agent-briefs/ and ~/agent-briefs/archive/ with a
+touch-friendly light-mode index page supporting Archive, Restore, and Delete.
+Binds strictly to localhost (127.0.0.1) so remote access is handled privately
+by Tailscale Serve over HTTPS.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import errno
+import html
+import json
+import os
+import re
+import stat
+import sys
+import threading
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import quote, unquote, urlparse
+
+CONFIG_PATH = Path(
+    os.environ.get("AGENT_BRIEFS_CONFIG", Path.home() / ".config" / "agent-briefs" / "config")
+).expanduser()
+BRIEFS_DIR = Path(os.environ.get("AGENT_BRIEFS_DIR", Path.home() / "agent-briefs")).expanduser().resolve()
+ARCHIVE_DIR = (BRIEFS_DIR / "archive").resolve()
+
+TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.html$")
+MAX_BRIEF_BYTES = 10 * 1024 * 1024  # 10 MB per brief
+SOCKET_TIMEOUT_SEC = 15.0
+MAX_CONCURRENT_REQUESTS = 16
+
+BRIEF_CSP = (
+    "default-src 'none'; "
+    "script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; "
+    "img-src data:; "
+    "font-src data:; "
+    "connect-src 'none'; "
+    "form-action 'none'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+
+INDEX_CSP = (
+    "default-src 'none'; "
+    "script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; "
+    "connect-src 'self'; "
+    "form-action 'none'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+
+_CONCURRENCY_SEM = threading.Semaphore(MAX_CONCURRENT_REQUESTS)
+
+
+def load_config_file(path: Path = CONFIG_PATH) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return values
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        val = val.strip().strip('"').strip("'")
+        values[key.strip()] = val
+    return values
+
+
+def build_allowlists(local_port: int) -> tuple[set[str], set[str], str]:
+    cfg = load_config_file()
+    hosts = {f"127.0.0.1:{local_port}", f"localhost:{local_port}"}
+    origins = {f"http://127.0.0.1:{local_port}", f"http://localhost:{local_port}"}
+
+    base_url = os.environ.get("AGENT_BRIEFS_URL", cfg.get("BASE_URL", "")).strip().rstrip("/")
+    if base_url:
+        parsed = urlparse(base_url)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            hosts.add(parsed.netloc.lower())
+            origins.add(f"{parsed.scheme.lower()}://{parsed.netloc.lower()}")
+
+    extra_hosts = os.environ.get("AGENT_BRIEFS_ALLOWED_HOSTS", cfg.get("ALLOWED_HOSTS", ""))
+    for item in extra_hosts.split(","):
+        cleaned = item.strip().lower()
+        if cleaned:
+            hosts.add(cleaned)
+
+    extra_origins = os.environ.get("AGENT_BRIEFS_ALLOWED_ORIGINS", cfg.get("ALLOWED_ORIGINS", ""))
+    for item in extra_origins.split(","):
+        cleaned = item.strip().lower().rstrip("/")
+        if cleaned:
+            origins.add(cleaned)
+
+    allowed_user = os.environ.get("AGENT_BRIEFS_ALLOWED_USER", cfg.get("ALLOWED_USER", "")).strip().lower()
+    return hosts, origins, allowed_user
+
+
+def ensure_dirs() -> None:
+    BRIEFS_DIR.mkdir(parents=True, exist_ok=True)
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def is_safe_filename(name: str) -> bool:
+    if not name or "/" in name or "\\" in name or ".." in name or "\n" in name or "\r" in name:
+        return False
+    return bool(SAFE_NAME_RE.fullmatch(name))
+
+
+def resolve_brief(name: str, scope: str = "active") -> Path | None:
+    if not is_safe_filename(name):
+        return None
+    base = ARCHIVE_DIR if scope == "archive" else BRIEFS_DIR
+    candidate = base / name
+    if candidate.is_symlink():
+        return None
+    if candidate.parent.resolve() != base:
+        return None
+    return candidate
+
+
+def open_regular_nofollow(path: Path) -> tuple[int, os.stat_result] | None:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(str(path), flags)
+    except OSError:
+        return None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            os.close(fd)
+            return None
+        return fd, st
+    except OSError:
+        os.close(fd)
+        return None
+
+
+def extract_title(path: Path) -> str:
+    opened = open_regular_nofollow(path)
+    if opened is not None:
+        fd, _ = opened
+        try:
+            with os.fdopen(fd, "rb") as fh:
+                head = fh.read(8192).decode("utf-8", errors="ignore")
+            match = TITLE_RE.search(head)
+            if match:
+                cleaned = re.sub(r"\s+", " ", html.unescape(match.group(1))).strip()
+                if cleaned:
+                    return cleaned
+        except OSError:
+            pass
+    stem = path.stem
+    stem = re.sub(r"^\d{4}-\d{2}-\d{2}[-_]", "", stem)
+    return stem.replace("-", " ").replace("_", " ").strip().title() or path.name
+
+
+def format_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    if num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f} KB"
+    return f"{num_bytes / (1024 * 1024):.1f} MB"
+
+
+def list_scope(scope: str) -> list[dict]:
+    base = ARCHIVE_DIR if scope == "archive" else BRIEFS_DIR
+    ensure_dirs()
+    items = []
+    for entry in base.iterdir():
+        if entry.is_symlink() or not is_safe_filename(entry.name):
+            continue
+        try:
+            st = entry.lstat()
+        except OSError:
+            continue
+        if not stat.S_ISREG(st.st_mode):
+            continue
+        mtime = dt.datetime.fromtimestamp(st.st_mtime)
+        url_prefix = "/archive/" if scope == "archive" else "/"
+        items.append(
+            {
+                "file": entry.name,
+                "title": extract_title(entry),
+                "size": st.st_size,
+                "size_human": format_size(st.st_size),
+                "mtime": st.st_mtime,
+                "mtime_human": mtime.strftime("%Y-%m-%d %H:%M"),
+                "url": f"{url_prefix}{quote(entry.name)}",
+                "scope": scope,
+            }
+        )
+    items.sort(key=lambda item: item["mtime"], reverse=True)
+    return items
+
+
+def safe_move_no_overwrite(src: Path, dst: Path) -> str:
+    """Move src -> dst without following symlinks and without overwriting dst."""
+    if src.is_symlink() or not src.exists():
+        return "not_found"
+    if dst.is_symlink() or dst.exists():
+        return "exists"
+    try:
+        os.link(str(src), str(dst), follow_symlinks=False)
+    except FileExistsError:
+        return "exists"
+    except FileNotFoundError:
+        return "not_found"
+    except OSError as exc:
+        if exc.errno == errno.EEXIST:
+            return "exists"
+        raise
+    try:
+        os.unlink(str(src))
+    except OSError:
+        try:
+            os.unlink(str(dst))
+        except OSError:
+            pass
+        raise
+    return "ok"
+
+
+INDEX_HTML = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent Briefs</title>
+<style>
+  :root {
+    --bg: #f8faf8;
+    --card: #fcfdfc;
+    --popover: #ffffff;
+    --muted-bg: #eef2ef;
+    --ink: #111a15;
+    --muted: #5b6960;
+    --border: #d6ded8;
+    --input: #77857c;
+    --accent: #1d6a44;
+    --accent-hover: #155234;
+    --accent-fg: #ffffff;
+    --accent-soft: #e2efe6;
+    --danger: #b42318;
+    --danger-fg: #ffffff;
+    --danger-soft: #fef2f2;
+    --radius-sm: 4px;
+    --radius: 8px;
+    --font: "Geist", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1411;
+    --card: #151b17;
+    --popover: #151b17;
+    --muted-bg: #1c241f;
+    --ink: #e8eeea;
+    --muted: #8a988f;
+    --border: #2a342e;
+    --input: #6e7c73;
+    --accent: #6cc08f;
+    --accent-hover: #83cea2;
+    --accent-fg: #0b130e;
+    --accent-soft: #17291f;
+    --danger: #f28b82;
+    --danger-fg: #2a0b09;
+    --danger-soft: #2e1513;
+  }
+  * { box-sizing: border-box; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14.5px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    height: 40px;
+    padding: 0 20px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mark {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--accent);
+    flex: none;
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .topbar-sub {
+    color: var(--muted);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .spacer { flex: 1; }
+  .wrap {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px 20px 72px;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .tabs {
+    display: inline-flex;
+    background: var(--muted-bg);
+    border: 1px solid var(--border);
+    padding: 3px;
+    border-radius: var(--radius);
+    gap: 3px;
+  }
+  .tab {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 6px 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    min-height: 36px;
+  }
+  .tab.active {
+    background: var(--card);
+    color: var(--ink);
+  }
+  .pill {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    background: var(--border);
+    color: var(--ink);
+  }
+  .tab.active .pill {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .search {
+    flex: 1 1 220px;
+    min-height: 40px;
+    padding: 7px 12px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-sm);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 14px;
+  }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-decoration: none;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:hover { background: var(--accent-soft); }
+  .btn-sm { min-height: 28px; padding: 3px 10px; font-size: 12px; background: transparent; }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-fg);
+  }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn-danger {
+    color: var(--danger);
+    border-color: var(--border);
+    background: var(--card);
+  }
+  .btn-danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+  .btn-danger.confirming {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--danger-fg);
+  }
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 13px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .card-main {
+    flex: 1 1 300px;
+    min-width: 0;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    word-break: break-word;
+  }
+  .card-main:hover .card-title { color: var(--accent); }
+  .card-meta {
+    margin-top: 3px;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+  .mono {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: center;
+  }
+  .empty {
+    background: var(--card);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--muted);
+  }
+  .archive-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+  }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink);
+    color: var(--bg);
+    padding: 9px 15px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+    box-shadow: 0 8px 24px rgba(17, 26, 21, 0.2);
+    max-width: calc(100vw - 32px);
+    text-align: center;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  @media (max-width: 600px) {
+    .topbar-sub { display: none; }
+    .wrap { padding: 14px 14px 64px; }
+    .card { padding: 13px; }
+    .card-actions { width: 100%; }
+    .card-actions .btn { flex: 1 1 auto; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <span class="mark" aria-hidden="true"></span>
+    <h1>Agent Briefs</h1>
+    <span class="topbar-sub">Interactive HTML reviews served privately over Tailscale</span>
+    <span class="spacer"></span>
+    <button class="btn btn-sm" id="themeBtn" type="button">Dark</button>
+    <button class="btn btn-sm" id="refreshBtn" type="button">↻ Refresh</button>
+  </header>
+
+  <div class="wrap">
+    <div class="controls">
+      <div class="tabs" role="tablist">
+        <button class="tab active" id="tabActive" type="button" role="tab" aria-selected="true">
+          Active <span class="pill" id="countActive">0</span>
+        </button>
+        <button class="tab" id="tabArchive" type="button" role="tab" aria-selected="false">
+          Archive <span class="pill" id="countArchive">0</span>
+        </button>
+      </div>
+      <input class="search" id="searchInput" type="search" placeholder="Filter briefs by title or filename…" autocomplete="off">
+    </div>
+
+    <div class="archive-bar" id="archiveBar" style="display:none;">
+      <button class="btn btn-danger" id="clearArchiveBtn" type="button">Empty Archive</button>
+    </div>
+
+    <main class="list" id="briefList"></main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const themeBtn = document.getElementById("themeBtn");
+  function applyTheme(t) {
+    if (t === "dark") {
+      document.documentElement.setAttribute("data-theme", "dark");
+      themeBtn.textContent = "Light";
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+      themeBtn.textContent = "Dark";
+    }
+    try { localStorage.setItem("agent-briefs-theme", t); } catch (e) {}
+  }
+  try {
+    if (localStorage.getItem("agent-briefs-theme") === "dark") applyTheme("dark");
+  } catch (e) {}
+  themeBtn.addEventListener("click", () => {
+    applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+
+  const state = {
+    tab: "active",
+    query: "",
+    active: [],
+    archive: [],
+    confirmKey: null,
+    confirmTimer: null,
+  };
+
+  const els = {
+    list: document.getElementById("briefList"),
+    tabActive: document.getElementById("tabActive"),
+    tabArchive: document.getElementById("tabArchive"),
+    countActive: document.getElementById("countActive"),
+    countArchive: document.getElementById("countArchive"),
+    search: document.getElementById("searchInput"),
+    refresh: document.getElementById("refreshBtn"),
+    archiveBar: document.getElementById("archiveBar"),
+    clearArchive: document.getElementById("clearArchiveBtn"),
+    toast: document.getElementById("toast"),
+  };
+
+  let toastTimer = null;
+  function showToast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2600);
+  }
+
+  function resetConfirm() {
+    state.confirmKey = null;
+    clearTimeout(state.confirmTimer);
+    state.confirmTimer = null;
+  }
+
+  function armConfirm(key) {
+    resetConfirm();
+    state.confirmKey = key;
+    state.confirmTimer = setTimeout(() => {
+      state.confirmKey = null;
+      render();
+    }, 4000);
+    render();
+  }
+
+  async function apiPost(endpoint, payload) {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || ("HTTP " + res.status));
+    }
+    return res.json();
+  }
+
+  async function loadBriefs(quiet) {
+    try {
+      const res = await fetch("/api/briefs", { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      state.active = data.active || [];
+      state.archive = data.archive || [];
+      render();
+      if (!quiet) showToast("Refreshed");
+    } catch (err) {
+      showToast("Failed to load briefs: " + err.message);
+    }
+  }
+
+  function esc(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function render() {
+    els.countActive.textContent = String(state.active.length);
+    els.countArchive.textContent = String(state.archive.length);
+
+    els.tabActive.classList.toggle("active", state.tab === "active");
+    els.tabArchive.classList.toggle("active", state.tab === "archive");
+    els.tabActive.setAttribute("aria-selected", String(state.tab === "active"));
+    els.tabArchive.setAttribute("aria-selected", String(state.tab === "archive"));
+
+    const showArchiveBar = state.tab === "archive" && state.archive.length > 0;
+    els.archiveBar.style.display = showArchiveBar ? "flex" : "none";
+    const clearConfirming = state.confirmKey === "clear-archive";
+    els.clearArchive.classList.toggle("confirming", clearConfirming);
+    els.clearArchive.textContent = clearConfirming ? "Confirm Empty Archive?" : "Empty Archive";
+
+    const items = state.tab === "active" ? state.active : state.archive;
+    const q = state.query.trim().toLowerCase();
+    const filtered = q
+      ? items.filter((item) =>
+          item.title.toLowerCase().includes(q) || item.file.toLowerCase().includes(q)
+        )
+      : items;
+
+    if (filtered.length === 0) {
+      els.list.innerHTML =
+        '<div class="empty">' +
+        (q
+          ? "No briefs match your filter."
+          : state.tab === "active"
+            ? "No active briefs yet. Any agent can save HTML files to ~/agent-briefs/ or run publish-brief."
+            : "Archive is empty.") +
+        "</div>";
+      return;
+    }
+
+    els.list.innerHTML = filtered
+      .map((item) => {
+        const delKey = "del:" + item.scope + ":" + item.file;
+        const confirming = state.confirmKey === delKey;
+        const primaryAction =
+          item.scope === "active"
+            ? '<button class="btn" type="button" data-action="archive" data-file="' + esc(item.file) + '">Archive</button>'
+            : '<button class="btn" type="button" data-action="restore" data-file="' + esc(item.file) + '">Restore</button>';
+        return (
+          '<article class="card">' +
+            '<a class="card-main" href="' + esc(item.url) + '">' +
+              '<div class="card-title">' + esc(item.title) + "</div>" +
+              '<div class="card-meta">' +
+                '<span class="mono">' + esc(item.file) + "</span>" +
+                "<span>" + esc(item.mtime_human) + "</span>" +
+                "<span>" + esc(item.size_human) + "</span>" +
+              "</div>" +
+            "</a>" +
+            '<div class="card-actions">' +
+              '<a class="btn btn-primary" href="' + esc(item.url) + '">Open</a>' +
+              primaryAction +
+              '<button class="btn btn-danger' + (confirming ? " confirming" : "") + '" type="button" data-action="delete" data-scope="' + esc(item.scope) + '" data-file="' + esc(item.file) + '">' +
+                (confirming ? "Confirm Delete?" : "Delete") +
+              "</button>" +
+            "</div>" +
+          "</article>"
+        );
+      })
+      .join("");
+  }
+
+  els.tabActive.addEventListener("click", () => {
+    state.tab = "active";
+    resetConfirm();
+    render();
+  });
+
+  els.tabArchive.addEventListener("click", () => {
+    state.tab = "archive";
+    resetConfirm();
+    render();
+  });
+
+  els.search.addEventListener("input", (e) => {
+    state.query = e.target.value;
+    render();
+  });
+
+  els.refresh.addEventListener("click", () => loadBriefs(false));
+
+  els.clearArchive.addEventListener("click", async () => {
+    if (state.confirmKey !== "clear-archive") {
+      armConfirm("clear-archive");
+      return;
+    }
+    resetConfirm();
+    try {
+      const res = await apiPost("/api/clear-archive", {});
+      await loadBriefs(true);
+      showToast("Cleared " + (res.deleted || 0) + " archived brief(s)");
+    } catch (err) {
+      showToast("Clear failed: " + err.message);
+    }
+  });
+
+  els.list.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-action]");
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const file = btn.dataset.file;
+    const scope = btn.dataset.scope || state.tab;
+
+    if (action === "archive") {
+      resetConfirm();
+      try {
+        await apiPost("/api/archive", { file });
+        await loadBriefs(true);
+        showToast("Archived " + file);
+      } catch (err) {
+        showToast("Archive failed: " + err.message);
+      }
+      return;
+    }
+
+    if (action === "restore") {
+      resetConfirm();
+      try {
+        await apiPost("/api/restore", { file });
+        await loadBriefs(true);
+        showToast("Restored " + file);
+      } catch (err) {
+        showToast("Restore failed: " + err.message);
+      }
+      return;
+    }
+
+    if (action === "delete") {
+      const delKey = "del:" + scope + ":" + file;
+      if (state.confirmKey !== delKey) {
+        armConfirm(delKey);
+        return;
+      }
+      resetConfirm();
+      try {
+        await apiPost("/api/delete", { file, scope });
+        await loadBriefs(true);
+        showToast("Deleted " + file);
+      } catch (err) {
+        showToast("Delete failed: " + err.message);
+      }
+    }
+  });
+
+  loadBriefs(true);
+})();
+</script>
+</body>
+</html>
+"""
+
+
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    request_queue_size = 16
+
+
+class BriefsHandler(BaseHTTPRequestHandler):
+    def setup(self) -> None:
+        super().setup()
+        self.connection.settimeout(SOCKET_TIMEOUT_SEC)
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A002
+        sys.stderr.write(f"[agent-briefs] {self.address_string()} - {format % args}\n")
+
+    def _send_bytes(
+        self,
+        status: int,
+        content_type: str,
+        body: bytes,
+        csp: str | None = None,
+    ) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        if csp:
+            self.send_header("Content-Security-Policy", csp)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_json(self, status: int, payload: dict) -> None:
+        raw = json.dumps(payload).encode("utf-8")
+        self._send_bytes(status, "application/json; charset=utf-8", raw)
+
+    def _check_host_and_user(self) -> bool:
+        local_port = self.server.server_address[1]
+        allowed_hosts, _, allowed_user = build_allowlists(local_port)
+        host = (self.headers.get("Host") or "").strip().lower()
+        if host not in allowed_hosts:
+            self._send_bytes(HTTPStatus.MISDIRECTED_REQUEST, "text/plain; charset=utf-8", b"Disallowed Host header\n")
+            return False
+        if allowed_user:
+            ts_user = (self.headers.get("Tailscale-User-Login") or "").strip().lower()
+            if ts_user and ts_user != allowed_user:
+                self._send_bytes(HTTPStatus.FORBIDDEN, "text/plain; charset=utf-8", b"Forbidden Tailscale user\n")
+                return False
+        return True
+
+    def _check_post_csrf(self) -> bool:
+        local_port = self.server.server_address[1]
+        _, allowed_origins, _ = build_allowlists(local_port)
+
+        ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if ctype != "application/json":
+            self._send_json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "Content-Type must be application/json"})
+            return False
+
+        sec_fetch_site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if sec_fetch_site and sec_fetch_site != "same-origin":
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": "Cross-origin POST rejected"})
+            return False
+
+        origin = (self.headers.get("Origin") or "").strip().lower().rstrip("/")
+        if origin and origin not in allowed_origins:
+            self._send_json(HTTPStatus.FORBIDDEN, {"error": "Disallowed Origin header"})
+            return False
+
+        return True
+
+    def _read_json(self) -> dict | None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return None
+        if length < 0 or length > 65536:
+            return None
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def do_GET(self) -> None:  # noqa: N802
+        if not _CONCURRENCY_SEM.acquire(blocking=False):
+            self._send_bytes(HTTPStatus.SERVICE_UNAVAILABLE, "text/plain; charset=utf-8", b"Server busy\n")
+            return
+        try:
+            if not self._check_host_and_user():
+                return
+
+            parsed = urlparse(self.path)
+            path = unquote(parsed.path)
+
+            if path in ("/", "/index.html"):
+                self._send_bytes(
+                    HTTPStatus.OK,
+                    "text/html; charset=utf-8",
+                    INDEX_HTML.encode("utf-8"),
+                    csp=INDEX_CSP,
+                )
+                return
+
+            if path == "/health":
+                self._send_json(HTTPStatus.OK, {"ok": True})
+                return
+
+            if path == "/api/briefs":
+                self._send_json(
+                    HTTPStatus.OK,
+                    {
+                        "active": list_scope("active"),
+                        "archive": list_scope("archive"),
+                    },
+                )
+                return
+
+            if path.startswith("/archive/"):
+                name = path[len("/archive/"):]
+                target = resolve_brief(name, scope="archive")
+            elif path.startswith("/"):
+                name = path[1:]
+                target = resolve_brief(name, scope="active")
+            else:
+                target = None
+
+            if target is None:
+                self._send_bytes(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"Brief not found\n")
+                return
+
+            opened = open_regular_nofollow(target)
+            if opened is None:
+                self._send_bytes(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"Brief not found\n")
+                return
+
+            fd, st = opened
+            try:
+                if st.st_size > MAX_BRIEF_BYTES:
+                    os.close(fd)
+                    self._send_bytes(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "text/plain; charset=utf-8", b"Brief exceeds 10 MB limit\n")
+                    return
+                with os.fdopen(fd, "rb") as fh:
+                    data = fh.read(MAX_BRIEF_BYTES + 1)
+            except OSError:
+                self._send_bytes(HTTPStatus.INTERNAL_SERVER_ERROR, "text/plain; charset=utf-8", b"Failed to read file\n")
+                return
+
+            if len(data) > MAX_BRIEF_BYTES:
+                self._send_bytes(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "text/plain; charset=utf-8", b"Brief exceeds 10 MB limit\n")
+                return
+
+            self._send_bytes(HTTPStatus.OK, "text/html; charset=utf-8", data, csp=BRIEF_CSP)
+        finally:
+            _CONCURRENCY_SEM.release()
+
+    def do_POST(self) -> None:  # noqa: N802
+        if not _CONCURRENCY_SEM.acquire(blocking=False):
+            self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Server busy"})
+            return
+        try:
+            if not self._check_host_and_user():
+                return
+            if not self._check_post_csrf():
+                return
+
+            parsed = urlparse(self.path)
+            path = unquote(parsed.path)
+            payload = self._read_json()
+            if payload is None:
+                self._send_json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON body"})
+                return
+
+            ensure_dirs()
+
+            if path == "/api/archive":
+                name = str(payload.get("file", ""))
+                src = resolve_brief(name, scope="active")
+                dst = resolve_brief(name, scope="archive")
+                if src is None or dst is None:
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Active brief not found"})
+                    return
+                outcome = safe_move_no_overwrite(src, dst)
+                if outcome == "not_found":
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Active brief not found"})
+                    return
+                if outcome == "exists":
+                    self._send_json(HTTPStatus.CONFLICT, {"error": "An archived brief with that name already exists"})
+                    return
+                self._send_json(HTTPStatus.OK, {"ok": True, "file": name})
+                return
+
+            if path == "/api/restore":
+                name = str(payload.get("file", ""))
+                src = resolve_brief(name, scope="archive")
+                dst = resolve_brief(name, scope="active")
+                if src is None or dst is None:
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Archived brief not found"})
+                    return
+                outcome = safe_move_no_overwrite(src, dst)
+                if outcome == "not_found":
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Archived brief not found"})
+                    return
+                if outcome == "exists":
+                    self._send_json(HTTPStatus.CONFLICT, {"error": "An active brief with that name already exists"})
+                    return
+                self._send_json(HTTPStatus.OK, {"ok": True, "file": name})
+                return
+
+            if path == "/api/delete":
+                name = str(payload.get("file", ""))
+                scope = "archive" if payload.get("scope") == "archive" else "active"
+                target = resolve_brief(name, scope=scope)
+                if target is None or target.is_symlink() or not target.exists():
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Brief not found"})
+                    return
+                try:
+                    st = target.lstat()
+                    if not stat.S_ISREG(st.st_mode):
+                        self._send_json(HTTPStatus.NOT_FOUND, {"error": "Brief not found"})
+                        return
+                    target.unlink()
+                except FileNotFoundError:
+                    self._send_json(HTTPStatus.NOT_FOUND, {"error": "Brief not found"})
+                    return
+                self._send_json(HTTPStatus.OK, {"ok": True, "file": name, "scope": scope})
+                return
+
+            if path == "/api/clear-archive":
+                deleted = 0
+                for entry in list(ARCHIVE_DIR.iterdir()):
+                    if entry.is_symlink() or not is_safe_filename(entry.name):
+                        continue
+                    try:
+                        if stat.S_ISREG(entry.lstat().st_mode):
+                            entry.unlink()
+                            deleted += 1
+                    except OSError:
+                        continue
+                self._send_json(HTTPStatus.OK, {"ok": True, "deleted": deleted})
+                return
+
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "Unknown endpoint"})
+        finally:
+            _CONCURRENCY_SEM.release()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Serve HTML agent briefs over localhost/Tailscale.")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8766)
+    args = parser.parse_args()
+
+    ensure_dirs()
+    server = BoundedThreadingHTTPServer((args.host, args.port), BriefsHandler)
+    sys.stderr.write(f"[agent-briefs] Serving {BRIEFS_DIR} on http://{args.host}:{args.port}\n")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

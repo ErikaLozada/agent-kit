@@ -1,0 +1,20 @@
+# Per-worktree task record (make task); read by make status, never merged
+TASK.md
+# Deploy log (make deploy)
+.deploys.log
+# Reviewer findings (make review)
+.reviews/
+# Local working scratch, probes, and hubs
+.scratch/
+# Local agent settings and secrets/keys
+.claude/settings.local.json
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+.netrc
+credentials*
+secrets*
+# Python caches
+__pycache__/

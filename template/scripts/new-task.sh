@@ -1,0 +1,70 @@
+#!/bin/bash
+# Starts a task in its own worktree and branch, beside this folder: make task NAME=fix-search [OWNER="Codex"]
+# Untracked files listed in LINKS (agent-kit.conf) are symlinked in; tracked ones come from the branch.
+{  # read the whole script before running any of it, so editing this file during a run cannot break that run
+set -e
+cd "$(dirname "$0")/.."
+. ./agent-kit.conf
+NAME="$1"; OWNER="${2:-unassigned}"
+[ -n "$NAME" ] || { echo "usage: make task NAME=<short-name> [OWNER=<agent>]"; exit 1; }
+[ "$(git branch --show-current)" = main ] || { echo "Run from the main worktree."; exit 1; }
+MAIN="$PWD"; WT="$(dirname "$MAIN")/$(basename "$MAIN")-$NAME"
+
+git worktree add -q -b "$NAME" "$WT" main
+for f in $LINKS; do
+  [[ " $OWN " == *" $f "* ]] && continue
+  if [ -e "$f" ] && ! git ls-files --error-unmatch "$f" >/dev/null 2>&1 && [ ! -e "$WT/$f" ]; then
+    mkdir -p "$WT/$(dirname "$f")"; ln -s "$MAIN/$f" "$WT/$f"
+  fi
+done
+
+used="$(cat "$(dirname "$MAIN")"/"$(basename "$MAIN")"-*/TASK.md 2>/dev/null | sed -n 's/^Port: *//p')"
+listening() {                                               # ss on Linux, lsof on macOS; neither: assume free
+  if command -v ss >/dev/null; then ss -ltn | grep -q ":$1 "
+  elif command -v lsof >/dev/null; then lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+  else return 1; fi
+}
+PORT="${TEST_PORT:-8001}"; while echo "$used" | grep -qx "$PORT" || listening "$PORT"; do PORT=$((PORT+1)); done
+
+cat > "$WT/TASK.md" <<EOF
+# Task: $NAME
+Owner: $OWNER
+Status: working
+Branch: $NAME
+Port: $PORT
+Lead: none (make worker fills this in)
+
+## Goal
+(what done looks like, and the requirement or decision it serves)
+
+## Files
+(files this task changes; tell peers before touching anything else)
+
+## Contracts
+(anything other work depends on: a data format, API, prompt, command)
+
+## Key decisions
+(only non-obvious choices: decision, reason, reference; omit if none)
+
+## Worker discretion
+(routine choices allowed; return to lead before changing scope, contracts or constraints)
+
+## Failure cases
+(edges the tests must cover: partial success, two operations at once, stale state, reruns)
+
+## Readiness
+(lead: mode required for complex/materially ambiguous work, brief for small well-specified work; brief version)
+(worker: outcome, constraints, verification plan, unresolved gaps; required mode: no code/test edits before lead PROCEED)
+(lead: checked version, material corrections, proceed or blocked; recheck after a material brief change)
+
+## Test server
+${TEST_SERVER//\{PORT\}/$PORT}
+
+## Notes
+
+## Report
+(the worker: what changed with file:line, how it was tested, what could not be verified, acceptance checks missed)
+EOF
+echo "Task $NAME: $WT (branch $NAME, test port $PORT). Fill in TASK.md; finish with: make finish NAME=$NAME"
+exit
+}

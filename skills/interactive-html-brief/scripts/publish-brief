@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Publish an HTML brief to ~/agent-briefs/ and print its clickable URL.
+
+Resolves the base URL in order:
+  1. AGENT_BRIEFS_URL environment variable
+  2. BASE_URL in ~/.config/agent-briefs/config
+  3. Auto-detected Tailscale DNSName (via `tailscale status --json`) on HTTPS port 8444
+  4. Fallback http://127.0.0.1:8766
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from urllib.parse import quote
+
+CONFIG_PATH = Path(
+    os.environ.get("AGENT_BRIEFS_CONFIG", Path.home() / ".config" / "agent-briefs" / "config")
+).expanduser()
+BRIEFS_DIR = Path(os.environ.get("AGENT_BRIEFS_DIR", Path.home() / "agent-briefs")).expanduser().resolve()
+DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.html$")
+MAX_BRIEF_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def load_config(path: Path = CONFIG_PATH) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return values
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        values[key.strip()] = val.strip().strip('"').strip("'")
+    return values
+
+
+def detect_tailscale_dns() -> str | None:
+    try:
+        proc = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return None
+        data = json.loads(proc.stdout)
+        dns = str(data.get("Self", {}).get("DNSName", "")).strip().rstrip(".")
+        return dns or None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def resolve_base_url() -> str:
+    env_url = os.environ.get("AGENT_BRIEFS_URL", "").strip().rstrip("/")
+    if env_url:
+        return env_url
+    cfg = load_config()
+    cfg_url = cfg.get("BASE_URL", "").strip().rstrip("/")
+    if cfg_url:
+        return cfg_url
+    https_port = cfg.get("HTTPS_PORT", "8444").strip() or "8444"
+    ts_dns = detect_tailscale_dns()
+    if ts_dns:
+        return f"https://{ts_dns}:{https_port}"
+    local_port = cfg.get("LOCAL_PORT", "8766").strip() or "8766"
+    return f"http://127.0.0.1:{local_port}"
+
+
+def sanitize_slug(text: str) -> str:
+    stem = re.sub(r"\.html?$", "", text.strip(), flags=re.IGNORECASE)
+    stem = stem.replace("..", "-")
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem)
+    stem = re.sub(r"\.{2,}", ".", stem)
+    stem = re.sub(r"-{2,}", "-", stem).strip("-._")
+    return stem or "brief"
+
+
+def build_filename(source: Path, slug: str | None) -> str:
+    base = sanitize_slug(slug if slug else source.name)
+    candidate = f"{base}.html" if DATE_PREFIX_RE.match(base) else f"{dt.date.today().isoformat()}-{base}.html"
+    if not SAFE_NAME_RE.fullmatch(candidate) or ".." in candidate:
+        raise ValueError(f"Generated unsafe filename: {candidate}")
+    return candidate
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Copy an HTML brief into ~/agent-briefs/ and print its clickable URL."
+    )
+    parser.add_argument("source", nargs="?", help="Path to the .html file to publish")
+    parser.add_argument("slug", nargs="?", help="Optional descriptive slug for the published filename")
+    parser.add_argument("--url", action="store_true", help="Print the briefs index URL and exit")
+    parser.add_argument("--list", action="store_true", help="List currently active briefs and their URLs")
+    args = parser.parse_args()
+
+    BRIEFS_DIR.mkdir(parents=True, exist_ok=True)
+    base_url = resolve_base_url()
+
+    if args.url:
+        print(f"{base_url}/")
+        return 0
+
+    if args.list:
+        files = sorted(
+            (
+                p
+                for p in BRIEFS_DIR.iterdir()
+                if not p.is_symlink() and p.is_file() and SAFE_NAME_RE.fullmatch(p.name)
+            ),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for item in files:
+            print(f"{base_url}/{quote(item.name)}")
+        return 0
+
+    if not args.source:
+        parser.print_usage(sys.stderr)
+        return 2
+
+    src = Path(args.source).expanduser().resolve()
+    if not src.is_file():
+        print(f"Error: file not found: {src}", file=sys.stderr)
+        return 1
+    if src.suffix.lower() not in (".html", ".htm"):
+        print(f"Error: only .html/.htm files may be published (got {src.name})", file=sys.stderr)
+        return 1
+
+    st = src.stat()
+    if not stat.S_ISREG(st.st_mode):
+        print(f"Error: not a regular file: {src}", file=sys.stderr)
+        return 1
+    if st.st_size > MAX_BRIEF_BYTES:
+        print(f"Error: file exceeds {MAX_BRIEF_BYTES // (1024 * 1024)} MB limit", file=sys.stderr)
+        return 1
+
+    target_name = build_filename(src, args.slug)
+    dst = (BRIEFS_DIR / target_name).resolve()
+    if dst.parent != BRIEFS_DIR:
+        print("Error: resolved destination escapes briefs directory", file=sys.stderr)
+        return 1
+
+    if src != dst:
+        fd, tmp_name = tempfile.mkstemp(prefix=".publish-", suffix=".tmp", dir=str(BRIEFS_DIR))
+        os.close(fd)
+        try:
+            shutil.copy2(src, tmp_name)
+            os.chmod(tmp_name, 0o600)
+            os.replace(tmp_name, dst)
+        except Exception:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+    else:
+        os.chmod(dst, 0o600)
+
+    print(f"{base_url}/{quote(target_name)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

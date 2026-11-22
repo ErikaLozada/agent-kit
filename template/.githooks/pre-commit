@@ -1,0 +1,55 @@
+#!/bin/bash
+# Turned on by `make setup`. Runs for every commit, whichever agent or person makes it.
+. ./agent-kit.conf
+
+# 1. Protected files guard
+if [ "${USER_OK:-0}" != 1 ]; then
+  for f in $PROTECTED; do
+    if git diff --cached --name-only | grep -qx "$f"; then
+      echo "pre-commit: $f is listed as PROTECTED in agent-kit.conf: only the user changes it."
+      echo "            If you are the user, commit again with: USER_OK=1 git commit ..."
+      exit 1
+    fi
+  done
+fi
+
+# 2. Append-only guard for docs/decisions.md (allow additions; block rewrites/deletions unless USER_OK=1)
+if [ "${USER_OK:-0}" != 1 ] && git diff --cached --name-only | grep -qx "docs/decisions.md"; then
+  if git diff --cached -U0 -- docs/decisions.md | grep -qE '^-[^-]'; then
+    echo "pre-commit: docs/decisions.md is append-only (existing lines were removed or edited)."
+    echo "            Append a new superseding entry instead, or override with: USER_OK=1 git commit ..."
+    exit 1
+  fi
+fi
+
+# 3. Staged secret-pattern scan (prints filenames and counts only, never matched values)
+if [ "${ALLOW_SECRET_MATCH:-0}" != 1 ]; then
+  secret_re='(gh[pos]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE [K]EY-----|Account[K]ey=[A-Za-z0-9+/=]{16,}|SharedAccess[S]ignature=)'
+  secret_hits=0
+  while IFS= read -r staged; do
+    [ -n "$staged" ] || continue
+    cnt="$(git diff --cached -U0 -- "$staged" | grep -E '^\+[^+]' | grep -cE "$secret_re" || true)"
+    if [ "${cnt:-0}" -gt 0 ]; then
+      echo "pre-commit: potential secret pattern in $staged ($cnt match(es); values omitted)"
+      secret_hits=$((secret_hits + cnt))
+    fi
+  done < <(git diff --cached --name-only --diff-filter=ACM)
+  if [ "$secret_hits" -gt 0 ]; then
+    echo "pre-commit: staged secret pattern(s) detected; commit refused."
+    echo "            Remove the secret before committing (false-positive fixture: ALLOW_SECRET_MATCH=1 git commit ...)."
+    exit 1
+  fi
+fi
+
+# 4. Explicit test runner guard
+out="$(bash scripts/test.sh 2>&1)"; status=$?
+if [ "$status" -eq 2 ]; then
+  echo "$out"; echo "pre-commit: no tests ran (NOT_EVALUATED); commit refused."
+  echo "            Before the project has tests, commit with: ALLOW_NO_TESTS=1 git commit ..."; exit 1
+elif [ "$status" -ne 0 ]; then
+  echo "$out"; echo "pre-commit: tests failed; commit refused."; exit 1
+fi
+# Keep skipped/unverified outcomes visible even when the project policy permits a commit.
+while IFS= read -r line; do
+  case "$line" in test:*) printf '%s\n' "$line" ;; esac
+done <<< "$out"

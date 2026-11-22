@@ -1,0 +1,90 @@
+{
+  "title": "Retrospective · brief to first reviewable build",
+  "storageKey": "example-retro-2026-01-01",
+  "notesFile": "retro-notes-example",
+  "footer": "Example data for the session-retro kit. Every block type appears once; replace the content, keep the shape.",
+  "sections": [
+    {
+      "id": "how",
+      "title": "How to read this",
+      "nav": "How to read",
+      "type": "prose",
+      "paragraphs": [
+        "Window: first message (09:00:00) to the first build the owner could open (09:40:00). Source: <code>metrics.json</code> from <code>session_metrics.py</code>. Written by a fresh session, not the one that did the work."
+      ]
+    },
+    {
+      "id": "glance",
+      "title": "At a glance",
+      "nav": "Glance",
+      "note": true,
+      "blocks": [
+        {"type": "kpis", "items": [
+          {"label": "To first reviewable build", "value": 40, "unit": "min"},
+          {"label": "Model generating", "value": 22, "unit": "min", "sub": "150 turns"},
+          {"label": "Tools running", "value": 6, "unit": "min"},
+          {"label": "Owner", "value": 12, "unit": "min", "sub": "5 turns"}
+        ]},
+        {"type": "stack", "heading": "Where the time went", "unit": "min", "segments": [
+          {"label": "Model generating", "value": 22, "tone": "model"},
+          {"label": "Owner", "value": 12, "tone": "human"},
+          {"label": "Tools running", "value": 6, "tone": "tool"}
+        ], "caption": "Model = gap before each assistant turn; tool = command runtime; owner = gap before each owner message."}
+      ]
+    },
+    {
+      "id": "answer",
+      "title": "The short answer",
+      "nav": "Short answer",
+      "note": true,
+      "type": "list",
+      "items": ["<strong>Three stops were required by the template</strong> and showed the owner nothing.", "<strong>Most model time was small sequential reads.</strong>"]
+    },
+    {
+      "id": "timeline",
+      "title": "Timeline",
+      "type": "timeline",
+      "items": [
+        {"time": "09:00:00", "name": "Read the docs, ask", "dur": "2 min", "id": "tl-orient"},
+        {"time": "09:02:00", "name": "Owner answers", "dur": "5 min", "kind": "human"},
+        {"time": "09:07:00", "name": "Build", "dur": "30 min", "hot": true, "body": "Most of the session."}
+      ]
+    },
+    {
+      "id": "time",
+      "title": "Where the agent's time went",
+      "nav": "Agent time",
+      "blocks": [
+        {"type": "bars", "unit": "min", "items": [
+          {"label": "Reading and exploring", "value": 9, "detail": "70 turns", "hot": true},
+          {"label": "Writing code", "value": 6, "detail": "20 turns"}
+        ]},
+        {"type": "table", "heading": "Turn shape", "columns": [{"label": "Measure"}, {"label": "Value", "num": true}], "rows": [["Turns", 150], ["Turns with parallel calls", 8]]}
+      ]
+    },
+    {
+      "id": "findings",
+      "title": "Findings",
+      "type": "findings",
+      "items": [
+        {"id": "f-gates", "title": "Stops that showed the owner nothing", "severity": "high", "minutes": 6, "body": "…", "evidence": "<code>AGENTS.md</code> line 9.", "fix": "Two gates: requirements, deploy."}
+      ]
+    },
+    {
+      "id": "claims",
+      "title": "The earlier retro, claim by claim",
+      "nav": "Claims checked",
+      "type": "claims",
+      "items": [
+        {"id": "c-total", "claim": "The build took 30 minutes", "verdict": "partly", "finding": "30 min of agent time; 40 min wall.", "evidence": "<code>metrics.json</code>."}
+      ]
+    },
+    {
+      "id": "questions",
+      "title": "Your questions, answered",
+      "nav": "Answers",
+      "type": "qa",
+      "items": [{"id": "q-idle", "q": "Was the agent idle while it waited for me?", "a": "No: …"}]
+    }
+  ]
+}
