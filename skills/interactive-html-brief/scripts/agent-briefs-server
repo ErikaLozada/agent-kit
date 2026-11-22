@@ -258,6 +258,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --font: "Geist", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
     --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1411;
+      --card: #151b17;
+      --popover: #151b17;
+      --muted-bg: #1c241f;
+      --ink: #e8eeea;
+      --muted: #8a988f;
+      --border: #2a342e;
+      --input: #6e7c73;
+      --accent: #6cc08f;
+      --accent-hover: #83cea2;
+      --accent-fg: #0b130e;
+      --accent-soft: #17291f;
+      --danger: #f28b82;
+      --danger-fg: #2a0b09;
+      --danger-soft: #2e1513;
+    }
+  }
   :root[data-theme="dark"] {
     --bg: #0f1411;
     --card: #151b17;
@@ -550,21 +569,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <script>
 (() => {
   const themeBtn = document.getElementById("themeBtn");
-  function applyTheme(t) {
-    if (t === "dark") {
-      document.documentElement.setAttribute("data-theme", "dark");
-      themeBtn.textContent = "Light";
-    } else {
-      document.documentElement.removeAttribute("data-theme");
-      themeBtn.textContent = "Dark";
+  const mqDark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function effectiveTheme() {
+    const explicit = document.documentElement.getAttribute("data-theme");
+    if (explicit === "dark" || explicit === "light") return explicit;
+    return mqDark && mqDark.matches ? "dark" : "light";
+  }
+  function syncThemeLabel() {
+    themeBtn.textContent = effectiveTheme() === "dark" ? "Light" : "Dark";
+  }
+  function applyTheme(t, persist) {
+    document.documentElement.setAttribute("data-theme", t);
+    syncThemeLabel();
+    if (persist) {
+      try { localStorage.setItem("agent-briefs-theme", t); } catch (e) {}
     }
-    try { localStorage.setItem("agent-briefs-theme", t); } catch (e) {}
   }
   try {
-    if (localStorage.getItem("agent-briefs-theme") === "dark") applyTheme("dark");
-  } catch (e) {}
+    const saved = localStorage.getItem("agent-briefs-theme");
+    if (saved === "dark" || saved === "light") applyTheme(saved, false);
+    else syncThemeLabel();
+  } catch (e) { syncThemeLabel(); }
+  if (mqDark) {
+    const onSysChange = () => {
+      if (!document.documentElement.getAttribute("data-theme")) syncThemeLabel();
+    };
+    if (mqDark.addEventListener) mqDark.addEventListener("change", onSysChange);
+    else if (mqDark.addListener) mqDark.addListener(onSysChange);
+  }
   themeBtn.addEventListener("click", () => {
-    applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    applyTheme(effectiveTheme() === "dark" ? "light" : "dark", true);
   });
 
   const state = {

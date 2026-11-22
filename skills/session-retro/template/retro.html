@@ -298,18 +298,29 @@ footer { width: 100%; max-width: 1360px; margin: 0 auto; padding: 0 20px 48px; c
 
   // ---------- theme ----------
   var themeBtn = document.getElementById("themeBtn");
+  var mqDark = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
   function current() {
     var t = document.documentElement.dataset.theme;
-    if (t) return t;
-    return window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    if (t === "dark" || t === "light") return t;
+    return mqDark && mqDark.matches ? "dark" : "light";
   }
-  function apply(t) {
+  function syncBtn() { themeBtn.textContent = current() === "dark" ? "Light" : "Dark"; }
+  function apply(t, persist) {
     document.documentElement.dataset.theme = t;
-    themeBtn.textContent = t === "dark" ? "Light" : "Dark";
-    try { localStorage.setItem("retro-theme", t); } catch (e) {}
+    syncBtn();
+    if (persist) { try { localStorage.setItem("retro-theme", t); } catch (e) {} }
   }
-  try { var saved = localStorage.getItem("retro-theme"); if (saved) apply(saved); else themeBtn.textContent = current() === "dark" ? "Light" : "Dark"; } catch (e) {}
-  themeBtn.addEventListener("click", function () { apply(current() === "dark" ? "light" : "dark"); });
+  try {
+    var saved = localStorage.getItem("retro-theme");
+    if (saved === "dark" || saved === "light") apply(saved, false);
+    else syncBtn();
+  } catch (e) { syncBtn(); }
+  if (mqDark) {
+    var onChange = function () { if (!document.documentElement.dataset.theme) syncBtn(); };
+    if (mqDark.addEventListener) mqDark.addEventListener("change", onChange);
+    else if (mqDark.addListener) mqDark.addListener(onChange);
+  }
+  themeBtn.addEventListener("click", function () { apply(current() === "dark" ? "light" : "dark", true); });
 })();
 </script>
 </body>

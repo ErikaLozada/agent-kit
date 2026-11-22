@@ -398,6 +398,7 @@ class InstallTests(unittest.TestCase):
             self.assertIn('#f8faf8', text, f'Fern & Stone light canvas missing in {name}')
             self.assertIn('#1d6a44', text, f'Fern & Stone primary accent missing in {name}')
             self.assertIn('data-theme="dark"', text, f'Dark toggle support missing in {name}')
+            self.assertIn('prefers-color-scheme: dark', text, f'Auto system dark mode missing in {name}')
 
         # Build a living project hub + snapshot in the throwaway project
         self.configure()
