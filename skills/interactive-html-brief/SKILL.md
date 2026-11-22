@@ -34,7 +34,7 @@ Generate a single-file, zero-dependency interactive HTML app whenever conveying 
    - **Typography & Chrome (zero external CDNs):**
      - Fonts: `"Geist", "Segoe UI", system-ui, -apple-system, sans-serif` and `"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace` (uses Geist if installed locally; zero external Google Fonts or CDN links — strictly compliant with `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'`).
      - Weights `400` and `600` only; minimum text size `12px`; `tabular-nums` on KPIs, badges, and tables; visible 2px fern `:focus-visible` ring; respect `prefers-reduced-motion`.
-     - **40px sticky topbar** with a 10px fern-green square mark, concise title, and **Dark / Light** toggle button (persisted in `localStorage`).
+     - **40px sticky topbar** (`data-brief-chrome="1"`) with a **`← All Briefs`** link (`href="/"`, hidden on `file://`), a 10px fern-green square mark, concise title, and **Dark / Light** toggle button persisted under the shared `agent-briefs-theme` `localStorage` key (matching `agent-briefs-server`, which also injects a fallback bar automatically for legacy briefs).
      - Thin hairline panels (`1px solid var(--border)`, `8px` radius, **no drop shadows on in-page cards**; shadows only on raised modals/popovers). Radii: `4px` inputs/tags, `8px` buttons/cards, `12px` modals.
 2. **Responsive Screen Width (Tablet Landscape & Wide Monitors)**
    - Use fluid `width: 100%; max-width: 1360px; margin: 0 auto` with comfortable `16px–20px` side padding so tablets in landscape (`1024–1366px`) use the screen cleanly without wasted margins, while ultrawide displays cap neatly at `1360px` instead of stretching edge-to-edge.

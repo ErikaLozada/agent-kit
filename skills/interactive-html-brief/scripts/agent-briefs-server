@@ -839,6 +839,131 @@ INDEX_HTML = r"""<!DOCTYPE html>
 """
 
 
+BRIEF_CHROME_CSS = r"""<style data-agent-brief-chrome-css>
+.ab-chrome{position:sticky;top:0;z-index:9999;height:40px;padding:0 16px;display:flex;align-items:center;gap:10px;background:#f8faf8;color:#111a15;border-bottom:1px solid #d6ded8;font-family:"Geist","Segoe UI",system-ui,-apple-system,sans-serif;font-size:13px;line-height:1}
+.ab-chrome-back{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:8px;border:1px solid #d6ded8;background:#fcfdfc;color:#111a15;text-decoration:none;font-size:12px;font-weight:600;white-space:nowrap}
+.ab-chrome-back:hover{background:#e2efe6;color:#1d6a44;border-color:#1d6a44}
+.ab-chrome-mark{width:10px;height:10px;border-radius:2px;background:#1d6a44;flex:none}
+.ab-chrome-title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.ab-chrome-btn{font:inherit;font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;border:1px solid #d6ded8;background:transparent;color:#111a15;cursor:pointer;white-space:nowrap}
+.ab-chrome-btn:hover{background:#e2efe6}
+.ab-chrome-btn:focus-visible,.ab-chrome-back:focus-visible{outline:2px solid #1d6a44;outline-offset:2px}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]) .ab-chrome{background:#0f1411;color:#e8eeea;border-bottom-color:#2a342e}
+  :root:not([data-theme="light"]) .ab-chrome-back,:root:not([data-theme="light"]) .ab-chrome-btn{background:#151b17;color:#e8eeea;border-color:#2a342e}
+  :root:not([data-theme="light"]) .ab-chrome-back:hover,:root:not([data-theme="light"]) .ab-chrome-btn:hover{background:#17291f;color:#6cc08f;border-color:#6cc08f}
+  :root:not([data-theme="light"]) .ab-chrome-mark{background:#6cc08f}
+}
+:root[data-theme="dark"] .ab-chrome{background:#0f1411;color:#e8eeea;border-bottom-color:#2a342e}
+:root[data-theme="dark"] .ab-chrome-back,:root[data-theme="dark"] .ab-chrome-btn{background:#151b17;color:#e8eeea;border-color:#2a342e}
+:root[data-theme="dark"] .ab-chrome-back:hover,:root[data-theme="dark"] .ab-chrome-btn:hover{background:#17291f;color:#6cc08f;border-color:#6cc08f}
+:root[data-theme="dark"] .ab-chrome-mark{background:#6cc08f}
+</style>"""
+
+BRIEF_LEGACY_DARK_CSS = r"""<style data-agent-brief-legacy-dark>
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){color-scheme:dark;--bg:#0f1411;--surface:#151b17;--surface-subtle:#1c241f;--surface-annotated:#17291f;--card:#151b17;--popover:#151b17;--text:#e8eeea;--ink:#e8eeea;--fg:#e8eeea;--text-muted:#8a988f;--muted:#8a988f;--mute:#8a988f;--text-faint:#8a988f;--border:#2a342e;--line:#2a342e;--border-strong:#6e7c73;--accent:#6cc08f;--acc:#6cc08f;--accent-soft:#17291f;--acc-bg:#17291f;--accent-border:#2e533e;--primary:#6cc08f;--primary-fg:#0b130e;--ok:#7fa3e6;--ok-soft:#162033;--ok-border:#2d4266;--q:#7fa3e6;--q-bg:#162033;--warn:#d88b52;--warn-soft:#2a1d13;--warn-bg:#2a1d13;--warn-border:#593b25;--danger:#f28b82;--bad:#f28b82;--danger-soft:#2e1513;--bad-bg:#2e1513;--danger-border:#632b27;--purple:#a5b4fc;--purple-soft:#1e1b3a;--purple-border:#3b3573;--teal:#2fa8a5;--teal-soft:#122929;--teal-border:#255755}
+  :root:not([data-theme="light"]) body{background:#0f1411;color:#e8eeea}
+  :root:not([data-theme="light"]) .dock,:root:not([data-theme="light"]) .bottom-dock{background:rgba(15,20,17,0.96);border-top-color:#2a342e}
+  :root:not([data-theme="light"]) .pill,:root:not([data-theme="light"]) .stance button,:root:not([data-theme="light"]) .addnote,:root:not([data-theme="light"]) .btn.ghost,:root:not([data-theme="light"]) .modal .box{background:#151b17;color:#e8eeea;border-color:#2a342e}
+  :root:not([data-theme="light"]) .pill.on,:root:not([data-theme="light"]) .btn:not(.ghost){background:#6cc08f;color:#0b130e;border-color:#6cc08f}
+  :root:not([data-theme="light"]) nav a:hover,:root:not([data-theme="light"]) .b-ctx,:root:not([data-theme="light"]) .stance button.on[data-s="Skip"]{background:#1c241f}
+  :root:not([data-theme="light"]) textarea,:root:not([data-theme="light"]) input[type="text"],:root:not([data-theme="light"]) input[type="search"]{background:#151b17;color:#e8eeea;border-color:#2a342e}
+  :root:not([data-theme="light"]) code{background:#1c241f;color:#e8eeea;border-color:#2a342e}
+  :root:not([data-theme="light"]) pre,:root:not([data-theme="light"]) .modal pre{background:#1c241f;color:#e8eeea;border-color:#2a342e}
+}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0f1411;--surface:#151b17;--surface-subtle:#1c241f;--surface-annotated:#17291f;--card:#151b17;--popover:#151b17;--text:#e8eeea;--ink:#e8eeea;--fg:#e8eeea;--text-muted:#8a988f;--muted:#8a988f;--mute:#8a988f;--text-faint:#8a988f;--border:#2a342e;--line:#2a342e;--border-strong:#6e7c73;--accent:#6cc08f;--acc:#6cc08f;--accent-soft:#17291f;--acc-bg:#17291f;--accent-border:#2e533e;--primary:#6cc08f;--primary-fg:#0b130e;--ok:#7fa3e6;--ok-soft:#162033;--ok-border:#2d4266;--q:#7fa3e6;--q-bg:#162033;--warn:#d88b52;--warn-soft:#2a1d13;--warn-bg:#2a1d13;--warn-border:#593b25;--danger:#f28b82;--bad:#f28b82;--danger-soft:#2e1513;--bad-bg:#2e1513;--danger-border:#632b27;--purple:#a5b4fc;--purple-soft:#1e1b3a;--purple-border:#3b3573;--teal:#2fa8a5;--teal-soft:#122929;--teal-border:#255755}
+:root[data-theme="dark"] body{background:#0f1411;color:#e8eeea}
+:root[data-theme="dark"] .dock,:root[data-theme="dark"] .bottom-dock{background:rgba(15,20,17,0.96);border-top-color:#2a342e}
+:root[data-theme="dark"] .pill,:root[data-theme="dark"] .stance button,:root[data-theme="dark"] .addnote,:root[data-theme="dark"] .btn.ghost,:root[data-theme="dark"] .modal .box{background:#151b17;color:#e8eeea;border-color:#2a342e}
+:root[data-theme="dark"] .pill.on,:root[data-theme="dark"] .btn:not(.ghost){background:#6cc08f;color:#0b130e;border-color:#6cc08f}
+:root[data-theme="dark"] nav a:hover,:root[data-theme="dark"] .b-ctx,:root[data-theme="dark"] .stance button.on[data-s="Skip"]{background:#1c241f}
+:root[data-theme="dark"] textarea,:root[data-theme="dark"] input[type="text"],:root[data-theme="dark"] input[type="search"]{background:#151b17;color:#e8eeea;border-color:#2a342e}
+:root[data-theme="dark"] code{background:#1c241f;color:#e8eeea;border-color:#2a342e}
+:root[data-theme="dark"] pre,:root[data-theme="dark"] .modal pre{background:#1c241f;color:#e8eeea;border-color:#2a342e}
+</style>"""
+
+BRIEF_CHROME_SCRIPT = r"""<script data-agent-brief-chrome-js>
+(() => {
+  const btn = document.getElementById("abChromeThemeBtn");
+  const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  let manual = false;
+  function sysTheme() { return mq && mq.matches ? "dark" : "light"; }
+  function eff() {
+    const ex = document.documentElement.getAttribute("data-theme");
+    return ex === "dark" || ex === "light" ? ex : sysTheme();
+  }
+  function sync() { if (btn) btn.textContent = eff() === "dark" ? "Light" : "Dark"; }
+  function apply(t, persist) {
+    document.documentElement.setAttribute("data-theme", t);
+    sync();
+    if (persist) {
+      manual = true;
+      try { localStorage.setItem("agent-briefs-theme", t); } catch (e) {}
+    }
+  }
+  try {
+    const saved = localStorage.getItem("agent-briefs-theme");
+    if (saved === "dark" || saved === "light") {
+      manual = true;
+      apply(saved, false);
+    } else {
+      apply(sysTheme(), false);
+    }
+  } catch (e) { apply(sysTheme(), false); }
+  if (mq) {
+    const onSys = () => { if (!manual) apply(sysTheme(), false); };
+    if (mq.addEventListener) mq.addEventListener("change", onSys);
+    else if (mq.addListener) mq.addListener(onSys);
+  }
+  if (btn) btn.addEventListener("click", () => apply(eff() === "dark" ? "light" : "dark", true));
+})();
+</script>"""
+
+
+def inject_brief_chrome(data: bytes, title: str) -> bytes:
+    """Ensure every served brief has a back-to-index link and Dark/Light auto+manual theme toggle."""
+    try:
+        doc = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data
+    if 'data-brief-chrome="1"' in doc or 'data-agent-brief-chrome-css' in doc:
+        return data
+
+    has_native_dark = (
+        'data-theme="dark"' in doc
+        or "prefers-color-scheme: dark" in doc
+        or "prefers-color-scheme:dark" in doc
+    )
+    head_inject = BRIEF_CHROME_CSS + ("" if has_native_dark else "\n" + BRIEF_LEGACY_DARK_CSS)
+    safe_title = html.escape(title or "Brief")
+    bar_html = (
+        '<div class="ab-chrome" data-brief-chrome="1">'
+        '<a class="ab-chrome-back" href="/">← All Briefs</a>'
+        '<span class="ab-chrome-mark" aria-hidden="true"></span>'
+        f'<span class="ab-chrome-title">{safe_title}</span>'
+        '<button type="button" class="ab-chrome-btn" id="abChromeThemeBtn">Dark</button>'
+        "</div>"
+    )
+
+    if "</head>" in doc.lower():
+        doc = re.sub(r"</head>", lambda _: head_inject + "\n</head>", doc, count=1, flags=re.IGNORECASE)
+    else:
+        doc = head_inject + "\n" + doc
+
+    if re.search(r"<body[^>]*>", doc, flags=re.IGNORECASE):
+        doc = re.sub(r"(<body[^>]*>)", lambda m: m.group(1) + "\n" + bar_html, doc, count=1, flags=re.IGNORECASE)
+    else:
+        doc = bar_html + "\n" + doc
+
+    if "</body>" in doc.lower():
+        doc = re.sub(r"</body>", lambda _: BRIEF_CHROME_SCRIPT + "\n</body>", doc, count=1, flags=re.IGNORECASE)
+    else:
+        doc = doc + "\n" + BRIEF_CHROME_SCRIPT
+
+    return doc.encode("utf-8")
+
+
 class BoundedThreadingHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 16
@@ -991,6 +1116,7 @@ class BriefsHandler(BaseHTTPRequestHandler):
                 self._send_bytes(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "text/plain; charset=utf-8", b"Brief exceeds 10 MB limit\n")
                 return
 
+            data = inject_brief_chrome(data, extract_title(target))
             self._send_bytes(HTTPStatus.OK, "text/html; charset=utf-8", data, csp=BRIEF_CSP)
         finally:
             _CONCURRENCY_SEM.release()

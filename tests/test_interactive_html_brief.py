@@ -131,10 +131,23 @@ class InteractiveHtmlBriefTests(unittest.TestCase):
         self.assertIn("connect-src 'self'", idx_hdrs["Content-Security-Policy"])
         self.assertIn("frame-ancestors 'none'", idx_hdrs["Content-Security-Policy"])
 
-        status, brief_hdrs, _ = self.request("GET", f"/{filename}")
+        status, brief_hdrs, brief_body = self.request("GET", f"/{filename}")
         self.assertEqual(status, 200)
         self.assertIn("connect-src 'none'", brief_hdrs["Content-Security-Policy"])
         self.assertIn("frame-ancestors 'none'", brief_hdrs["Content-Security-Policy"])
+        self.assertIn(b'href="/"', brief_body)
+        self.assertIn(b"abChromeThemeBtn", brief_body)
+        self.assertIn(b"prefers-color-scheme:dark", brief_body)
+        self.assertIn(b'data-theme="dark"', brief_body)
+
+        # Native brief with its own topbar (data-brief-chrome="1") is not double-wrapped
+        native = self.root / "native.html"
+        native.write_text('<!doctype html><html><head><title>Native</title></head><body><header data-brief-chrome="1"><a href="/">Back</a></header></body></html>', encoding="utf-8")
+        r2 = subprocess.run([sys.executable, str(PUBLISH_SCRIPT), str(native), "native-brief"], env=self.env, capture_output=True, text=True, check=True)
+        native_name = r2.stdout.strip().rsplit("/", 1)[-1]
+        status, _, native_body = self.request("GET", f"/{native_name}")
+        self.assertEqual(status, 200)
+        self.assertNotIn(b"abChromeThemeBtn", native_body)
 
         # 6. Host allowlist accepts configured Tailscale host and rejects foreign hosts (DNS rebinding)
         status, _, _ = self.request("GET", "/health", headers={"Host": self.remote_host})
