@@ -45,6 +45,7 @@ TODO: choices to make without asking.
 - Match surrounding code. Stage explicit paths (avoid blind `git add -A`). Small commits explaining why, with `Co-Authored-By`.
 - Test failure/edge cases (partial failures, retries, stale state); re-check the failing scenario after a fix.
 - Reuse existing helpers instead of duplicating logic.
+- Verify packages, APIs, and platform products are current (not deprecated) before recommending or adopting them.
 - Never claim a check ran or a URL works without verifying; otherwise say "not checked".
 - Rules live here, not in harness memory. Append settled choices to `docs/decisions.md`. Add a rule only after a real mistake.
 

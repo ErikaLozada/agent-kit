@@ -389,28 +389,90 @@ class InstallTests(unittest.TestCase):
         self.assertIn('No DEPLOY_CMD or SERVICE', self.sh('make', 'deploy', ok=False))
 
     def test_fern_stone_html_skills_and_living_project_hub(self):
-        """HTML skills use Fern & Stone tokens, zero external CDN links, and build valid living hubs."""
+        """HTML skills use Fern & Stone tokens, zero external CDN links, and build/serve multi-project hubs."""
+        import http.client, json, time
         retro_html = Path(KIT, 'skills/session-retro/template/retro.html').read_text(encoding='utf-8')
         server_py = Path(KIT, 'skills/interactive-html-brief/scripts/agent-briefs-server').read_text(encoding='utf-8')
         hub_py = Path(KIT, 'skills/living-project-hub/scripts/build_hub.py').read_text(encoding='utf-8')
-        for name, text in (('retro.html', retro_html), ('agent-briefs-server', server_py), ('build_hub.py', hub_py)):
+        hub_srv_py = Path(KIT, 'skills/living-project-hub/scripts/hub_server.py').read_text(encoding='utf-8')
+        for name, text in (('retro.html', retro_html), ('agent-briefs-server', server_py), ('build_hub.py', hub_py), ('hub_server.py', hub_srv_py)):
             self.assertNotIn('fonts.googleapis.com', text, f'external font CDN in {name}')
             self.assertIn('#f8faf8', text, f'Fern & Stone light canvas missing in {name}')
             self.assertIn('#1d6a44', text, f'Fern & Stone primary accent missing in {name}')
             self.assertIn('data-theme="dark"', text, f'Dark toggle support missing in {name}')
             self.assertIn('prefers-color-scheme: dark', text, f'Auto system dark mode missing in {name}')
 
-        # Build a living project hub + snapshot in the throwaway project
+        # Build a living project hub + snapshot AND register into a temp multi-project registry
         self.configure()
+        reg_file = os.path.join(os.path.dirname(self.proj), 'projects.json')
         out = self.sh('python3', os.path.join(KIT, 'skills/living-project-hub/scripts/build_hub.py'),
-                      '--root', self.proj, '--snapshot', 'phase-01-init')
+                      '--root', self.proj, '--snapshot', 'phase-01-init',
+                      '--register', '--registry', reg_file,
+                      env={'AGENT_HUB_URL': 'http://127.0.0.1:8765'})
         self.assertIn('Wrote snapshot', out)
+        self.assertIn('/p/proj/', out)
         hub_html = Path(self.proj, '.scratch/project-hub.html').read_text(encoding='utf-8')
         snap_html = Path(self.proj, '.scratch/snapshots/phase-01-init.html').read_text(encoding='utf-8')
         self.assertIn('Living Project &amp; Learning Hub', hub_html)
         self.assertIn('phase-01-init.html', hub_html)
         self.assertIn('SNAPSHOT', snap_html)
         self.assertNotIn('Microsoft Fabric', hub_html)
+
+        # Start unified multi-project hub_server.py and verify index, project hub, snapshot, feedback, and remove
+        with socket.socket() as s:
+            s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]
+        proc = subprocess.Popen(
+            ['python3', '-I', os.path.join(KIT, 'skills/living-project-hub/scripts/hub_server.py'),
+             '--multi', '--host', '127.0.0.1', '--port', str(port), '--registry', reg_file],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        self.addCleanup(lambda: (proc.terminate(), proc.wait(timeout=3)))
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            try:
+                c = http.client.HTTPConnection('127.0.0.1', port, timeout=2)
+                c.request('GET', '/health')
+                if c.getresponse().status == 200:
+                    c.close(); break
+                c.close()
+            except OSError:
+                time.sleep(0.05)
+        else:
+            self.fail('hub_server --multi failed to start')
+
+        def req(method, path, body=None, headers=None):
+            c = http.client.HTTPConnection('127.0.0.1', port, timeout=3)
+            try:
+                c.request(method, path, body=body, headers=headers or {})
+                r = c.getresponse(); return r.status, r.read()
+            finally:
+                c.close()
+
+        st, body = req('GET', '/')
+        self.assertEqual(st, 200); self.assertIn(b'Living Project Hubs', body)
+        st, body = req('GET', '/api/projects')
+        self.assertEqual(st, 200)
+        projs = json.loads(body)['projects']
+        self.assertEqual([p['slug'] for p in projs], ['proj'])
+        self.assertTrue(projs[0]['ready'])
+
+        st, body = req('GET', '/p/proj/')
+        self.assertEqual(st, 200); self.assertIn(b'Living Project &amp; Learning Hub', body)
+        st, body = req('GET', '/p/proj/snapshots/phase-01-init.html')
+        self.assertEqual(st, 200); self.assertIn(b'SNAPSHOT', body)
+        st, _ = req('GET', '/p/proj/snapshots/..%2fsecret.html')
+        self.assertEqual(st, 400)
+
+        st, _ = req('POST', '/p/proj/api/feedback',
+                    body=json.dumps({'round': 'r1', 'markdown': '# Notes\nLooks good', 'state': {}}),
+                    headers={'Content-Type': 'application/json'})
+        self.assertEqual(st, 200)
+        self.assertIn('Looks good', Path(self.proj, '.scratch/owner-feedback.md').read_text(encoding='utf-8'))
+
+        st, _ = req('POST', '/api/projects/remove', body=json.dumps({'slug': 'proj'}), headers={'Content-Type': 'application/json'})
+        self.assertEqual(st, 200)
+        st, body = req('GET', '/api/projects')
+        self.assertEqual(json.loads(body)['projects'], [])
 
     def test_public_repo_hygiene(self):
         """Ensure no personal paths, tailnet domains/IPs, or unrelated internal tools leak into the public kit."""

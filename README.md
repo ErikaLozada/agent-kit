@@ -157,14 +157,15 @@ flowchart TB
 - **When to add GSD:** Multi-phase builds with ordered dependencies, early assumption probes, and multi-day state tracking (`.planning/STATE.md`, `ROADMAP.md`, wave plans). Skip GSD for small tools, prototypes, or single-feature changes where `agent-kit` + `ship-feature` is much faster.
 - **What to enable alongside GSD:**
   1. **Keep local planner/tool caches out of Git:** `template/.gitignore` already ignores `.scratch/` and `.claude/settings.local.json`; add any repo-local generated agent folders you don't want committed and stage explicit paths (avoid blind `git add -A`).
-  2. **Enable the Living Project & Learning Hub (`living-project-hub` skill):** auto-discovers `.planning/` roadmaps, plans, summaries, `docs/`, and `.scratch/execution-log.json` into a Fern & Stone control center:
+  2. **Enable the unified Living Project & Learning Hub (`living-project-hub` skill):** one background server + Projects Index for **all** repos on your machine (auto-discovers `.planning/`, `docs/`, and `.scratch/execution-log.json`):
      ```sh
-     HUB_SKILL="$(cd -P ~/.agents/skills/living-project-hub && pwd)"
-     python3 "$HUB_SKILL/scripts/build_hub.py"                          # build .scratch/project-hub.html
-     python3 "$HUB_SKILL/scripts/build_hub.py" --snapshot phase-01-init # freeze phase snapshot
-     python3 "$HUB_SKILL/scripts/hub_server.py" --host 127.0.0.1 --port 8765
+     # Once per machine (serves all registered projects on one port; optional Tailscale HTTPS on :8445)
+     bash /path/to/agent-kit/skills/living-project-hub/scripts/setup-hub-server.sh
+
+     # Inside any project repo: build hub & register it into the shared Projects Index
+     build-project-hub --register
+     build-project-hub --snapshot phase-01-init --register   # freeze phase snapshot
      ```
-     *(For remote tablet/laptop access over Tailscale, pass `--host "$(tailscale ip -4)"`.)*
   3. **Capture lessons continuously:** Run **`wrap-up`** at the end of a session to distill traps from `.scratch/execution-log.json` into `AGENTS.md` / `docs/decisions.md` / overlays; run **`session-retro`** at major milestones for full transcript timing analysis.
 
 ### Mode D — Stack / domain overlays (`--overlay`)

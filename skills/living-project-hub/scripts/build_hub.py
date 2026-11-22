@@ -20,10 +20,12 @@ Usage:
 import argparse
 import html as html_lib
 import json
+import os
 import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT_PLAYBOOKS = ["AGENTS.md", "README.md", "CONTRIBUTING.md"]
 PRIORITY_DOCS = [
@@ -894,6 +896,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <body>
 
 <header class="topbar">
+  <a href="/" class="btn btn-sm" id="allProjectsLink" style="display:none;">← Projects</a>
   <span class="mark" aria-hidden="true"></span>
   <h1 class="topbar-title">__PROJECT_NAME__</h1>
   <span class="topbar-sub">Living Project &amp; Learning Hub</span>
@@ -1063,6 +1066,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <script>
 (function() {
   const META = JSON.parse(document.getElementById("hub-meta").textContent);
+  const API_BASE = (location.pathname.match(/^(\/p\/[^/]+)\//) || ["", ""])[1];
+  const allProjEl = document.getElementById("allProjectsLink");
+  if (allProjEl && API_BASE) allProjEl.style.display = "inline-flex";
   const themeBtn = document.getElementById("themeToggleBtn");
   const mqDark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
   function effectiveTheme() {
@@ -1261,7 +1267,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     const inSnapshotsDir = /\/snapshots\//.test(location.pathname);
     snaps.forEach(s => {
       const li = document.createElement("li");
-      const href = isHttp ? "/snapshots/" + encodeURIComponent(s.name) : (inSnapshotsDir ? "./" : "snapshots/") + encodeURIComponent(s.name);
+      const href = isHttp ? API_BASE + "/snapshots/" + encodeURIComponent(s.name) : (inSnapshotsDir ? "./" : "snapshots/") + encodeURIComponent(s.name);
       li.innerHTML = `<a class="snapshot-link" href="${href}" target="_blank" rel="noopener" title="${escapeHtml(s.name)}">${escapeHtml(s.label || s.name)}</a>`;
       list.appendChild(li);
     });
@@ -1658,7 +1664,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     const orig = saveServerBtn.textContent;
     saveServerBtn.textContent = "Saving...";
     try {
-      const res = await fetch("/api/feedback", {
+      const res = await fetch(API_BASE + "/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ savedAt: new Date().toISOString(), round: ROUND_ID, state, markdown: buildSinglePrompt() })
@@ -1682,7 +1688,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   async function refreshLiveLog() {
     if (!isHttp || META.isSnapshot) return;
     try {
-      const res = await fetch("/api/log");
+      const res = await fetch(API_BASE + "/api/log");
       if (!res.ok) return;
       const d = await res.json();
       if (d && Array.isArray(d.entries)) {
@@ -1695,7 +1701,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   async function refreshSnapshots() {
     if (!isHttp) return;
     try {
-      const res = await fetch("/api/snapshots");
+      const res = await fetch(API_BASE + "/api/snapshots");
       if (!res.ok) return;
       const d = await res.json();
       if (d && Array.isArray(d.snapshots)) {
@@ -1720,7 +1726,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     await refreshSnapshots();
     if (META.isSnapshot) return;
     try {
-      const res = await fetch("/api/state");
+      const res = await fetch(API_BASE + "/api/state");
       if (!res.ok) return;
       const d = await res.json();
       if (d && d.round === ROUND_ID && d.state) {
@@ -1850,6 +1856,60 @@ def build_html(
     return out
 
 
+def default_registry_path() -> Path:
+    return Path(os.environ.get("AGENT_HUB_REGISTRY", Path.home() / ".config" / "agent-hub" / "projects.json")).expanduser()
+
+
+def resolve_hub_base_url() -> str:
+    env_url = os.environ.get("AGENT_HUB_URL", "").strip().rstrip("/")
+    if env_url:
+        return env_url
+    cfg_path = Path(os.environ.get("AGENT_HUB_CONFIG", Path.home() / ".config" / "agent-hub" / "config")).expanduser()
+    cfg: dict[str, str] = {}
+    if cfg_path.is_file():
+        for raw in cfg_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip().strip('"').strip("'")
+    if cfg.get("BASE_URL"):
+        return cfg["BASE_URL"].rstrip("/")
+    https_port = cfg.get("HTTPS_PORT", "8445") or "8445"
+    try:
+        out = subprocess.check_output(["tailscale", "status", "--json"], stderr=subprocess.DEVNULL, text=True, timeout=3)
+        dns = str(json.loads(out).get("Self", {}).get("DNSName", "")).strip().rstrip(".")
+        if dns:
+            return f"https://{dns}:{https_port}"
+    except Exception:
+        pass
+    local_port = cfg.get("LOCAL_PORT", "8765") or "8765"
+    return f"http://127.0.0.1:{local_port}"
+
+
+def update_registry(registry_path: Path, slug: str, name: str, root: Path, remove: bool = False) -> None:
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(registry_path.parent, 0o700)
+    except OSError:
+        pass
+    data = load_json_file(registry_path, {"projects": {}})
+    if not isinstance(data, dict) or not isinstance(data.get("projects"), dict):
+        data = {"projects": {}}
+    if remove:
+        data["projects"].pop(slug, None)
+    else:
+        data["projects"][slug] = {
+            "name": name,
+            "root": str(root.resolve()),
+            "registered_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+        }
+    registry_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    try:
+        os.chmod(registry_path, 0o600)
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build the Living Project & Learning Hub HTML page")
     parser.add_argument("--root", default=None, help="Repository root directory (default: auto-detect git root or cwd)")
@@ -1857,6 +1917,10 @@ def main():
     parser.add_argument("--title", default=None, help="Override project title")
     parser.add_argument("--subtitle", default=None, help="Override hero subtitle")
     parser.add_argument("--round", default=None, help="Feedback round ID (changes localStorage key)")
+    parser.add_argument("--slug", default=None, help="Registry slug for multi-project hub server (default: slugified repo folder)")
+    parser.add_argument("--registry", default=None, help="Path to multi-project registry JSON (default: ~/.config/agent-hub/projects.json)")
+    parser.add_argument("--register", action="store_true", help="Register this project in the unified multi-project hub server and print its URL")
+    parser.add_argument("--unregister", action="store_true", help="Remove this project from the unified multi-project hub registry and exit")
     parser.add_argument(
         "--snapshot",
         default=None,
@@ -1865,6 +1929,13 @@ def main():
     args = parser.parse_args()
 
     root = resolve_root(args.root)
+    reg_path = Path(args.registry).expanduser() if args.registry else default_registry_path()
+    proj_slug = slugify(args.slug or root.name)
+    if args.unregister:
+        update_registry(reg_path, proj_slug, proj_slug, root, remove=True)
+        print(f"Unregistered '{proj_slug}' from {reg_path}")
+        return
+
     scratch_dir = root / ".scratch"
     snapshots_dir = scratch_dir / "snapshots"
     out_html = Path(args.out).resolve() if args.out else scratch_dir / "project-hub.html"
@@ -1911,6 +1982,14 @@ def main():
     out_html.parent.mkdir(parents=True, exist_ok=True)
     out_html.write_text(live_html, encoding="utf-8")
     print(f"Wrote {out_html} ({len(live_html):,} bytes, {len(docs)} docs, {len(exec_log)} log entries, {len(snapshots)} snapshots)")
+
+    if args.register:
+        proj_name, _ = infer_project_identity(root, config)
+        if args.title:
+            proj_name = args.title
+        update_registry(reg_path, proj_slug, proj_name, root, remove=False)
+        base = resolve_hub_base_url()
+        print(f"Registered '{proj_slug}' -> {base}/p/{quote(proj_slug)}/  (index: {base}/)")
 
 
 if __name__ == "__main__":
