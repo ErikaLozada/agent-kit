@@ -99,6 +99,7 @@ When adopting an **existing repository**:
 | `make task NAME=<slug> [OWNER=<who>]` | Creates sibling worktree + branch, symlinks `LINKS` (skipping `OWN`), assigns a free `TEST_PORT`, and scaffolds `TASK.md` |
 | `make worker NAME=<slug> TIER=simple\|medium\|complex` | Creates the task worktree and launches a bounded worker (reads `~/.config/agent-kit/tiers.conf`, or pass `KIND=... MODEL=... EFFORT=...`, or set `WORKER_CMD`, or `DRY=1`) |
 | `make finish NAME=<slug>` | Removes a task's worktree and branch **only** after it is merged into `main` with no uncommitted tracked changes |
+| `make diagram` | Rebuilds `docs/diagrams/*.html` and `docs/diagrams/README.md` from `scripts/diagrams.py` using the linked `feature-diagram` skill |
 
 ### Commit & installer shortcuts
 
@@ -188,7 +189,7 @@ Install with: `bash /path/to/agent-kit/install.sh . --overlay /path/to/my-stack-
 | --- | --- |
 | `AGENTS.md`, `CLAUDE.md` | Shared instructions for every harness (< 3 KB): commands, outside-the-repo rules, data, gates, defaults, working speed, conventions, glossary |
 | `agent-kit.conf` | Project settings: `TEST_CMD`, `DEPLOY_CMD` / `SERVICE`, `HEALTH_URL`, `REVIEW_CMD`, `WORKER_CMD`, worktree `LINKS`/`OWN`, `PROTECTED` files |
-| `Makefile` | `test`, `review`, `status`, `deploy`, `setup`, `task`, `worker`, `finish` |
+| `Makefile` | `test`, `review`, `status`, `deploy`, `setup`, `task`, `worker`, `finish`, `diagram` |
 | `.githooks/pre-commit` | Runs `make test`, guards `PROTECTED` files, enforces append-only `docs/decisions.md`, and scans staged diffs for secrets (filenames/counts only) |
 | `scripts/` | Explicit test runner, read-only headless / tabbed review, guarded deploy, worktree lifecycle, tier-configurable worker launcher, status |
 | `docs/decisions.md` | Append-only decision log |
@@ -202,7 +203,8 @@ Install with: `bash /path/to/agent-kit/install.sh . --overlay /path/to/my-stack-
 | `wrap-up` | 2-minute end-of-session hygiene & lesson capture: checks git state, mines session friction, routes approved lessons to their one owning file |
 | `ship-with-agents` | Lead orchestration for parallel work: plan with owned files & failure cases, start workers, relay prompts, cross-provider review, merge |
 | `session-retro` | Quantitative retrospective from Claude Code, Codex, and pi transcripts, published as a Fern & Stone HTML page |
-| `interactive-html-brief` | Turns long reviews, plans, and audits into Fern & Stone interactive HTML pages (Light default + Dark toggle) with single-prompt feedback export |
+| `interactive-html-brief` | Turns long reviews, plans, and audits into Fern & Stone interactive HTML pages (Light default + Dark toggle) with single-prompt feedback export and inline embedded diagrams |
+| `feature-diagram` | Generates byte-stable, self-contained Fern & Stone HTML flow diagrams (`make diagram`) reading thresholds/results from code, plus inline blocks for briefs |
 | `living-project-hub` | Multi-phase project & learning control center (progress tracks, execution/CLI log, Markdown library, frozen phase snapshots, feedback save-back) |
 
 ---

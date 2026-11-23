@@ -10,6 +10,7 @@ TODO: what this is, who it is for, what "done" looks like. Requirements: TODO (f
 - `make review KIND=codex|claude|pi|gemini`: independent diff review (or set `REVIEW_CMD`).
 - `make deploy`: only when the user asks. Refuses dirty tree, non-`main` branch, or failing tests.
 - `make setup`: once per clone, turns on `.githooks/pre-commit`.
+- `make diagram`: rebuilds `docs/diagrams/*.html` from `scripts/diagrams.py` (see `feature-diagram` skill; ship major features with a diagram).
 - Parallel agents (`make task`, `worker`, `status`, `finish`): see `ship-with-agents`.
 
 ## Outside the repo

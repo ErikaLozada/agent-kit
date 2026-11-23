@@ -28,7 +28,7 @@ Generate a single-file, zero-dependency interactive HTML app whenever conveying 
 
 1. **Palette & Theme Toggle (Follows System + Manual Dark/Light Toggle)**
    - **Light tokens (default):** canvas `#f8faf8`, thin panel surface `#fcfdfc`, raised modal/popover `#ffffff`, muted/secondary `#eef2ef`, text `#111a15` (16.9:1), secondary text `#46534b`, muted text `#5b6960` (5.5:1), hairline border `#d6ded8`, input border `#77857c` (3.7:1 WCAG 1.4.11), primary fern accent `#1d6a44` (`#ffffff` text), subtle hover/selection wash `#e2efe6`.
-   - **Dark tokens (both `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ... } }` AND `:root[data-theme="dark"]`):** canvas `#0f1411`, surface/popover `#151b17`, muted `#1c241f`, text `#e8eeea`, muted text `#8a988f`, border `#2a342e`, input border `#6e7c73`, primary `#6cc08f` (`#0b130e` text), selection wash `#17291f`.
+   - **Dark tokens (both `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { ... } }` AND `:root[data-theme="dark"]`):** canvas `#0f1411`, surface/popover `#151b17`, muted `#1c241f`, text `#e8eeea`, secondary text `#c5d0c9`, muted text `#8a988f`, border `#2a342e`, input border `#6e7c73`, primary `#6cc08f` (`#0b130e` text), selection wash `#17291f`.
    - **Auto system theme + manual override:** Automatically follow `prefers-color-scheme: dark` (including live `window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ...)` updates when iPadOS/macOS/Linux switches appearance), and provide a **Dark / Light** button in the 40px topbar that sets `data-theme="dark"|"light"` and persists the explicit override in `localStorage`.
    - **Semantic colours (colour-blind safe):** positive/good = blue (`#3a64ad` light / `#7fa3e6` dark), warning/change = burnt orange (`#9c5520` light / `#d88b52` dark) — never green-vs-red; red (`#b42318` light / `#f28b82` dark) strictly for destructive actions and errors, always paired with text.
    - **Typography & Chrome (zero external CDNs):**
@@ -50,3 +50,10 @@ Generate a single-file, zero-dependency interactive HTML app whenever conveying 
    - Sticky bottom dock showing live feedback counts (e.g., `3 points · 2 decisions`) and a **Build & Copy Single Prompt** button.
    - Modal displaying clean structured Markdown containing *only* annotated points, stances, notes/questions, selected decisions, and general notes.
    - **Copy Prompt to Clipboard** button using `navigator.clipboard.writeText` with a `textarea.select()` + `document.execCommand('copy')` fallback and visible confirmation.
+5. **Embedded Feature Diagrams (Architecture & Feature Changes)**
+   - Whenever a brief explains an architecture, multi-stage pipeline, or feature change, embed a generated left-to-right flow diagram inline using the `feature-diagram` skill — **never** a static screenshot or hand-drawn SVG.
+   - Generate the inline block from the project's spec with:
+     ```sh
+     python3 ~/.agents/skills/feature-diagram/scripts/render_diagram.py scripts/diagrams.py --embed-slug <slug>
+     ```
+     (or import `render_embed(spec)` from `render_diagram.py`) and place the returned `<div class="fd-embed">` block directly inside the brief section. It reuses the same Fern & Stone tokens, dark/light toggle, responsive layout, and strict CSP.

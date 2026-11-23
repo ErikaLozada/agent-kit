@@ -1,5 +1,5 @@
 # Commands for people and agents alike; see AGENTS.md. Settings: agent-kit.conf.
-.PHONY: test status deploy setup task finish worker review
+.PHONY: test status deploy setup task finish worker review diagram
 
 test:
 	@bash scripts/test.sh
@@ -25,3 +25,6 @@ review:
 
 worker:
 	@DRY="$(DRY)" TIER="$(TIER)" WORKER_CMD="$(WORKER_CMD)" bash scripts/start-worker.sh "$(NAME)" "$(KIND)" "$(OWNER)" "$(MODEL)" "$(EFFORT)"
+
+diagram:
+	@bash scripts/diagram.sh

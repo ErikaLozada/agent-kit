@@ -130,6 +130,7 @@ If a worker goes quiet or off-brief, read its output, correct it with a short pr
 - Read every report. Check each acceptance criterion yourself where it is cheap; if one is not met, say so plainly
   with the numbers and ask whether that's acceptable or what to do (don't quietly accept it).
 - Run the project-wide checks from step 1 and any lead-only comparisons from the plan.
+- **Feature diagram:** when shipping a major feature or changing how an existing feature works, add or update its spec in `scripts/diagrams.py` (reading real thresholds, limits, and before/after numbers from code/results) and run `make diagram` as lead-only work (see `feature-diagram` skill).
 - Look at the combined diff for duplicated logic: new code should reuse existing helpers, not copy their rules.
 - You make every commit; workers never do. With task worktrees, review the diff in the task's worktree and commit
   there on its branch, then merge into main. In a kit project, run `make finish NAME=<task>` only after you have
