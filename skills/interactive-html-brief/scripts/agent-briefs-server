@@ -110,6 +110,28 @@ def ensure_dirs() -> None:
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def briefs_dir_problem() -> str | None:
+    """Explain how to recover when the briefs folder is missing or not writable for this process.
+
+    A systemd unit with ProtectHome=read-only only gets write access to the folder that existed
+    when the service started; if that folder is moved, renamed or replaced, the running server
+    loses it and needs a restart.
+    """
+    try:
+        ensure_dirs()
+        writable = os.access(BRIEFS_DIR, os.W_OK) and os.access(ARCHIVE_DIR, os.W_OK)
+    except OSError:
+        writable = False
+    if writable:
+        return None
+    return (
+        f"The briefs folder {BRIEFS_DIR} is missing or read-only for this server. It was probably "
+        "moved, renamed or replaced while the server was running. Put it back at that path, then "
+        "restart the server (Linux: systemctl --user restart agent-briefs; "
+        "macOS: launchctl kickstart -k gui/$(id -u)/local.agent-briefs)."
+    )
+
+
 def is_safe_filename(name: str) -> bool:
     if not name or "/" in name or "\\" in name or ".." in name or "\n" in name or "\r" in name:
         return False
@@ -663,7 +685,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   async function loadBriefs(quiet) {
     try {
       const res = await fetch("/api/briefs", { cache: "no-store" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) {
+        const bad = await res.json().catch(() => ({}));
+        if (bad.error) {
+          els.list.innerHTML = '<div class="empty" role="alert">' + esc(bad.error) + "</div>";
+        }
+        throw new Error(bad.error ? "server problem (see page)" : "HTTP " + res.status);
+      }
       const data = await res.json();
       state.active = data.active || [];
       state.archive = data.archive || [];
@@ -1069,10 +1097,18 @@ class BriefsHandler(BaseHTTPRequestHandler):
                 return
 
             if path == "/health":
-                self._send_json(HTTPStatus.OK, {"ok": True})
+                problem = briefs_dir_problem()
+                if problem:
+                    self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": problem})
+                else:
+                    self._send_json(HTTPStatus.OK, {"ok": True})
                 return
 
             if path == "/api/briefs":
+                problem = briefs_dir_problem()
+                if problem:
+                    self._send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": problem})
+                    return
                 self._send_json(
                     HTTPStatus.OK,
                     {

@@ -100,7 +100,9 @@ EOF
   if command -v systemctl >/dev/null 2>&1; then
     systemctl --user daemon-reload
     systemctl --user enable --now agent-briefs.service
-    echo "Started systemd user service: agent-briefs.service"
+    # enable --now leaves an already-running server untouched; restart so re-running setup picks up new code and folders.
+    systemctl --user restart agent-briefs.service
+    echo "Started (or restarted) systemd user service: agent-briefs.service"
   else
     echo "Wrote $UNIT_FILE (systemctl not found; start manually)."
   fi

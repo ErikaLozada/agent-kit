@@ -126,6 +126,13 @@ def inspect_project(slug: str, meta: dict) -> dict:
     if snap_dir.is_dir():
         snap_count = sum(1 for p in snap_dir.glob("*.html") if p.is_file() and not p.is_symlink())
 
+    # Pages from the shared build_hub.py resolve API and page links against /p/<slug>/ via API_BASE.
+    # Anything else (an old or forked builder) uses root-relative links that 404 under --multi.
+    outdated = False
+    if target is not None:
+        data = read_regular_nofollow(target)
+        outdated = target == hub_multi_index or data is None or b"API_BASE" not in data
+
     mtime = 0.0
     mtime_human = "Not built yet"
     if target is not None:
@@ -140,6 +147,7 @@ def inspect_project(slug: str, meta: dict) -> dict:
         "name": str(meta.get("name") or slug),
         "root": str(root),
         "ready": target is not None,
+        "outdated": outdated,
         "branch": git_branch_short(root) if root.is_dir() else "",
         "log_count": log_count,
         "snapshot_count": snap_count,
@@ -308,7 +316,9 @@ PROJECTS_INDEX_HTML = r"""<!DOCTYPE html>
     }
     listEl.innerHTML = filtered.map(p => {
       const confirming = confirmSlug === p.slug;
-      const badge = p.ready ? '<span class="tag tag-ok">Ready</span>' : '<span class="tag tag-warn">Not built</span>';
+      const badge = !p.ready ? '<span class="tag tag-warn">Not built</span>'
+        : p.outdated ? '<span class="tag tag-warn" title="Built by an old or project-local copy of build_hub.py; links break under this server. Run build-project-hub --register in the repo.">Outdated build: run build-project-hub --register</span>'
+        : '<span class="tag tag-ok">Ready</span>';
       return '<article class="card">' +
         '<a class="card-main" href="' + esc(p.url) + '">' +
           '<div class="card-head"><span class="card-title">' + esc(p.name) + '</span>' + badge + (p.branch ? '<span class="tag mono">' + esc(p.branch) + '</span>' : '') + '</div>' +

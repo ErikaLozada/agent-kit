@@ -198,6 +198,25 @@ class InteractiveHtmlBriefTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue((self.briefs_dir / filename).is_file())
 
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root ignores directory permissions")
+    def test_unwritable_briefs_folder_explains_recovery(self):
+        # Moving ~/agent-briefs while the systemd unit runs leaves the server with a read-only view;
+        # it must say what happened and how to recover instead of failing with a traceback.
+        self.briefs_dir.chmod(0o500)
+        self.addCleanup(self.briefs_dir.chmod, 0o700)
+        for path in ("/api/briefs", "/health"):
+            status, _, body = self.request("GET", path)
+            self.assertEqual(status, 503, path)
+            error = json.loads(body)["error"]
+            self.assertIn("moved, renamed or replaced", error)
+            self.assertIn("systemctl --user restart agent-briefs", error)
+            self.assertIn("launchctl kickstart -k", error)
+
+    def test_setup_script_restarts_running_service(self):
+        # `enable --now` does not restart a running unit, so re-running setup used to keep stale code and folders.
+        text = (SKILL_DIR / "scripts" / "setup-briefs-server.sh").read_text(encoding="utf-8")
+        self.assertIn("systemctl --user restart agent-briefs.service", text)
+
     def test_no_sensitive_hostnames_or_ips_in_skill(self):
         """Guard against committing real tailnet domains, Tailscale CGNAT IPs, or personal paths."""
         ts_ip_re = re.compile(r"\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b")
