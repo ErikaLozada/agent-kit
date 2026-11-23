@@ -1,6 +1,6 @@
 # Proposal: a shared `feature-diagram` skill and `make diagram`
 
-Status: decided by the user, ready to build. For the next agent working on agent-kit. Written by the lead agent of the first project to adopt it (Crate Digger).
+Status: implemented in 776165f (skill, `make diagram`, brief embedding). For the next agent working on agent-kit. Written by the lead agent of the first project to adopt it (Crate Digger).
 
 ## What the user wants
 

@@ -10,6 +10,7 @@ A fast, 2-minute end-of-session check and learning loop — lighter than `sessio
 ## 1. Check workspace state
 
 - Run `git status --short` and today's commits (`git log --since="midnight" --oneline`).
+- Run `git fetch -q && git status -sb` to catch unpushed commits or remote commits made from another machine before they collide at push time.
 - If the repo has `Makefile` with `status`, check `make status` for dirty worktrees or unfinished tasks.
 - Note any uncommitted changes, failing tests, or open threads to hand off to tomorrow's session.
 
