@@ -24,6 +24,10 @@ Run in the project repo:
 ```sh
 build-project-hub --register                              # build the hub and list the project on the hub server
 build-project-hub --snapshot phase-01-setup --register    # same, plus a frozen snapshot when a phase completes
+build-project-hub --append-log '{"title":"...","tool":"...","command":"...","result":"...","learning":"..."}'
+build-project-hub --append-log - <<'EOF'                  # append one entry (or a JSON array) from stdin and rebuild
+{"title": "...", "tool": "...", "command": "...", "result": "...", "learning": "..."}
+EOF
 ```
 
 `build-project-hub` is `$HUB_SKILL/scripts/build_hub.py`. The hub is then at `/p/<slug>/` on the hub server; after a rebuild, refreshing the browser is enough.

@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title><!--__BRIEF_TITLE__--></title>
+<style>
+/* interactive-html-brief template (Fern & Stone, zero external CDN dependencies).
+   build_brief.py fills the markers from a JSON data file; do not hand-edit per brief. */
+:root {
+  --bg: #f8faf8;
+  --panel: #fcfdfc;
+  --raised: #ffffff;
+  --muted: #eef2ef;
+  --text: #111a15;
+  --sub: #46534b;
+  --mute: #5b6960;
+  --border: #d6ded8;
+  --input: #77857c;
+  --primary: #1d6a44;
+  --primary-fg: #ffffff;
+  --wash: #e2efe6;
+  --good: #3a64ad;
+  --good-soft: #eef3fb;
+  --warn: #9c5520;
+  --warn-soft: #fdf3eb;
+  --bad: #b42318;
+  --bad-soft: #fef2f2;
+  --shadow: 0 12px 32px rgba(17, 26, 21, 0.14);
+  --r-sm: 4px;
+  --r: 8px;
+  --r-lg: 12px;
+  --font: "Geist", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1411;
+    --panel: #151b17;
+    --raised: #151b17;
+    --muted: #1c241f;
+    --text: #e8eeea;
+    --sub: #c5d0c9;
+    --mute: #8a988f;
+    --border: #2a342e;
+    --input: #6e7c73;
+    --primary: #6cc08f;
+    --primary-fg: #0b130e;
+    --wash: #17291f;
+    --good: #7fa3e6;
+    --good-soft: #172235;
+    --warn: #d88b52;
+    --warn-soft: #2b1e14;
+    --bad: #f28b82;
+    --bad-soft: #2e1513;
+    --shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1411;
+  --panel: #151b17;
+  --raised: #151b17;
+  --muted: #1c241f;
+  --text: #e8eeea;
+  --sub: #c5d0c9;
+  --mute: #8a988f;
+  --border: #2a342e;
+  --input: #6e7c73;
+  --primary: #6cc08f;
+  --primary-fg: #0b130e;
+  --wash: #17291f;
+  --good: #7fa3e6;
+  --good-soft: #172235;
+  --warn: #d88b52;
+  --warn-soft: #2b1e14;
+  --bad: #f28b82;
+  --bad-soft: #2e1513;
+  --shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+code, pre { font-family: var(--mono); font-size: 12.5px; }
+code { overflow-wrap: anywhere; background: var(--muted); padding: 1px 4px; border-radius: var(--r-sm); }
+pre {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow-x: auto;
+  line-height: 1.45;
+}
+pre code { background: none; padding: 0; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Top bar */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 40px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.topbar-back {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sub);
+  text-decoration: none;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.topbar-back:hover { background: var(--wash); color: var(--text); }
+.mark { width: 10px; height: 10px; border-radius: 2px; background: var(--primary); flex: none; }
+.topbar-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.spacer { flex: 1; }
+
+/* Buttons */
+.btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--wash); }
+.btn-primary { background: var(--primary); color: var(--primary-fg); border-color: transparent; }
+.btn-primary:hover { opacity: 0.92; background: var(--primary); }
+.btn-danger { color: var(--bad); }
+.btn-danger:hover { background: var(--bad-soft); border-color: var(--bad); }
+
+/* Shell layout */
+.shell {
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 20px 20px 96px;
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); padding: 16px 16px 96px; }
+  .sidebar { display: none; }
+}
+
+/* Sidebar */
+.sidebar {
+  position: sticky;
+  top: 56px;
+  max-height: calc(100vh - 124px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 12px;
+}
+.side-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mute);
+  margin: 0 0 8px;
+}
+.pills { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+.pill {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+}
+.pill:hover { background: var(--wash); color: var(--text); }
+.pill.active {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-color: transparent;
+  font-weight: 600;
+}
+.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  color: var(--sub);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+.nav-link:hover { background: var(--wash); color: var(--text); }
+.nav-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+  min-width: 18px;
+  text-align: center;
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--muted);
+}
+.nav-count.has-notes { background: var(--wash); color: var(--primary); font-weight: 600; }
+
+/* Main header & sections */
+.brief-head {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.brief-head h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.brief-sub { margin: 0 0 10px; color: var(--sub); max-width: 78ch; }
+.meta-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.meta-chip {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--mute);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+}
+
+.banner {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warn);
+  background: var(--panel);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  font-size: 12.5px;
+  margin-bottom: 16px;
+}
+
+.section { padding: 18px 0 22px; border-bottom: 1px solid var(--border); scroll-margin-top: 52px; }
+.section:last-of-type { border-bottom: 0; }
+.sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.sec-num {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  background: var(--wash);
+  padding: 1px 7px;
+  border-radius: var(--r-sm);
+}
+.sec-head h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
+.lede { margin: 0 0 14px; color: var(--sub); max-width: 78ch; }
+p { margin: 8px 0 0; max-width: 78ch; }
+ul.plain, ol.plain { margin: 8px 0 0; padding-left: 20px; }
+ul.plain li, ol.plain li { margin: 4px 0; max-width: 78ch; }
+
+/* Blocks */
+.block { margin-bottom: 14px; }
+.block h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.caption { font-size: 12px; color: var(--mute); margin: 6px 0 0; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 0; }
+.kpi { border: 1px solid var(--border); border-radius: var(--r); background: var(--panel); padding: 10px 12px; }
+.kpi dt { font-size: 12px; color: var(--mute); }
+.kpi dd { margin: 2px 0 0; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi .unit { font-size: 12px; font-weight: 400; color: var(--mute); margin-left: 3px; }
+.kpi .sub { display: block; font-size: 12px; font-weight: 400; color: var(--mute); margin-top: 2px; }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); background: var(--panel); }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--mute); padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--muted); }
+td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.callout {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--r-sm);
+  background: var(--muted);
+  font-size: 13px;
+}
+.callout.tone-good { border-left-color: var(--good); background: var(--good-soft); }
+.callout.tone-warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.callout.tone-bad { border-left-color: var(--bad); background: var(--bad-soft); }
+.callout-label { font-weight: 600; margin-right: 6px; }
+
+/* Cards & Decisions */
+.card-stack { display: flex; flex-direction: column; gap: 12px; }
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 14px 16px;
+}
+.card.annotated {
+  border-color: var(--primary);
+  background: var(--wash);
+}
+.card.is-hidden { display: none; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.card-title-wrap { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card-head h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--sub);
+  white-space: nowrap;
+}
+.badge.tone-good { color: var(--good); border-color: var(--good); background: var(--good-soft); }
+.badge.tone-warn { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+.badge.tone-bad { color: var(--bad); border-color: var(--bad); background: var(--bad-soft); }
+
+.card-body { margin-top: 6px; }
+.card-body .table-wrap { margin-top: 10px; }
+
+/* Feedback controls */
+.card-controls {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.stance-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--sub);
+  cursor: pointer;
+}
+.stance-btn:hover { background: var(--wash); color: var(--text); }
+.stance-btn[aria-pressed="true"] { border-color: var(--primary); background: var(--primary); color: var(--primary-fg); }
+.stance-btn[data-stance="agree"][aria-pressed="true"] { border-color: var(--good); background: var(--good); color: #ffffff; }
+.stance-btn[data-stance="change"][aria-pressed="true"] { border-color: var(--warn); background: var(--warn); color: #ffffff; }
+.note-toggle {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: var(--r);
+  border: 1px dashed var(--input);
+  background: transparent;
+  color: var(--sub);
+  cursor: pointer;
+  margin-left: auto;
+}
+.note-toggle:hover { background: var(--wash); color: var(--text); }
+.note-wrap { width: 100%; margin-top: 8px; }
+.note-wrap[hidden] { display: none; }
+textarea.note-input {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--input);
+  border-radius: var(--r-sm);
+  padding: 7px 9px;
+}
+
+/* Decision options */
+.options { display: grid; gap: 8px; margin-top: 10px; }
+.opt-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--bg);
+  cursor: pointer;
+}
+.opt-label:hover { background: var(--wash); }
+.opt-label.selected { border-color: var(--primary); background: var(--wash); }
+.opt-label input[type="radio"] { margin-top: 3px; accent-color: var(--primary); }
+.opt-title { font-weight: 600; font-size: 13.5px; }
+.opt-rec {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--good);
+  margin-left: 6px;
+}
+.opt-desc { font-size: 12.5px; color: var(--sub); margin-top: 2px; }
+
+/* Overall notes */
+.overall-box {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 14px 16px;
+}
+.overall-box h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.overall-box p { margin: 0 0 10px; font-size: 13px; color: var(--sub); }
+
+footer { margin-top: 20px; font-size: 12px; color: var(--mute); }
+
+/* Bottom dock */
+.dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  background: var(--raised);
+  border-top: 1px solid var(--border);
+  padding: 10px 20px;
+}
+.dock-inner {
+  width: 100%;
+  max-width: 1360px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dock-counts { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--sub); }
+.dock-actions { display: flex; gap: 8px; align-items: center; }
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(15, 20, 17, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-backdrop[hidden] { display: none; }
+.modal {
+  width: 100%;
+  max-width: 760px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.modal-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.modal textarea {
+  width: 100%;
+  min-height: 280px;
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--input);
+  border-radius: var(--r-sm);
+  padding: 10px;
+  resize: vertical;
+}
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<header class="topbar" data-brief-chrome="1">
+  <a class="topbar-back" id="allBriefsLink" href="/">← All Briefs</a>
+  <span class="mark" aria-hidden="true"></span>
+  <h1 class="topbar-title"><!--__BRIEF_TITLE__--></h1>
+  <span class="spacer"></span>
+  <button class="btn" id="themeBtn" type="button">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" aria-label="Filters and sections">
+    <p class="side-label">Filter cards</p>
+    <div class="pills" id="filterPills">
+      <button class="pill active" type="button" data-filter="all">All</button>
+      <button class="pill" type="button" data-filter="annotated">Annotated</button>
+      <!--__BRIEF_FILTER_PILLS__-->
+    </div>
+    <p class="side-label">Sections</p>
+    <ul class="nav-list" id="sectionNav">
+      <!--__BRIEF_NAV__-->
+    </ul>
+  </aside>
+
+  <main id="main">
+    <div class="banner" id="storageBanner" hidden>This browser cannot save to localStorage. Copy your prompt before closing the page.</div>
+    <div class="brief-head">
+      <h1><!--__BRIEF_TITLE__--></h1>
+      <!--__BRIEF_HEADER_EXTRA__-->
+    </div>
+
+    <!--__BRIEF_BODY__-->
+
+    <section class="section" id="sec-overall">
+      <div class="overall-box">
+        <h2>Overall Notes / Extra Questions</h2>
+        <p>Anything that spans multiple sections or was not covered above.</p>
+        <textarea class="note-input" id="overallNotes" rows="3" placeholder="Add overall thoughts, priorities, or extra questions…"></textarea>
+      </div>
+    </section>
+
+    <footer><!--__BRIEF_FOOTER__--></footer>
+  </main>
+</div>
+
+<div class="dock" role="region" aria-label="Feedback summary">
+  <div class="dock-inner">
+    <div class="dock-counts" id="dockCounts">0 points · 0 decisions</div>
+    <div class="dock-actions">
+      <button class="btn btn-danger" id="resetBtn" type="button">Reset</button>
+      <button class="btn btn-primary" id="buildPromptBtn" type="button">Build &amp; Copy Single Prompt</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="promptModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h2 id="modalTitle">Single Feedback Prompt</h2>
+      <button class="btn" id="closeModalBtn" type="button">Close</button>
+    </div>
+    <textarea id="promptOutput" readonly aria-label="Generated Markdown prompt"></textarea>
+    <div class="modal-foot">
+      <button class="btn btn-primary" id="copyPromptBtn" type="button">Copy Prompt to Clipboard</button>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="brief-meta">/*__BRIEF_META__*/</script>
+<script>
+(function () {
+  "use strict";
+  var meta = JSON.parse(document.getElementById("brief-meta").textContent);
+
+  // Hide All Briefs link on file://
+  var backLink = document.getElementById("allBriefsLink");
+  if (backLink && location.protocol === "file:") backLink.hidden = true;
+
+  // Theme (shared agent-briefs-theme key + live prefers-color-scheme)
+  var THEME_KEY = "agent-briefs-theme";
+  var themeBtn = document.getElementById("themeBtn");
+  var mqDark = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  function currentTheme() {
+    var t = document.documentElement.dataset.theme;
+    if (t === "dark" || t === "light") return t;
+    return mqDark && mqDark.matches ? "dark" : "light";
+  }
+  function syncThemeBtn() {
+    themeBtn.textContent = currentTheme() === "dark" ? "Light" : "Dark";
+  }
+  function applyTheme(t, persist) {
+    document.documentElement.dataset.theme = t;
+    syncThemeBtn();
+    if (persist) { try { localStorage.setItem(THEME_KEY, t); } catch (e) {} }
+  }
+  try {
+    var savedTheme = localStorage.getItem(THEME_KEY);
+    if (savedTheme === "dark" || savedTheme === "light") applyTheme(savedTheme, false);
+    else syncThemeBtn();
+  } catch (e) { syncThemeBtn(); }
+  if (mqDark) {
+    var onScheme = function () { if (!document.documentElement.dataset.theme) syncThemeBtn(); };
+    if (mqDark.addEventListener) mqDark.addEventListener("change", onScheme);
+    else if (mqDark.addListener) mqDark.addListener(onScheme);
+  }
+  themeBtn.addEventListener("click", function () {
+    applyTheme(currentTheme() === "dark" ? "light" : "dark", true);
+  });
+
+  // Storage
+  var KEY = meta.storageKey || ("brief-" + location.pathname);
+  var store = (function () {
+    try { localStorage.setItem("__ab_p", "1"); localStorage.removeItem("__ab_p"); return localStorage; }
+    catch (e) { return null; }
+  })();
+  if (!store) document.getElementById("storageBanner").hidden = false;
+
+  function defaultState() { return { points: {}, decisions: {}, overall: "" }; }
+  var state = defaultState();
+  try {
+    var parsed = JSON.parse((store && store.getItem(KEY)) || "null");
+    if (parsed && typeof parsed === "object") {
+      state.points = parsed.points && typeof parsed.points === "object" ? parsed.points : {};
+      state.decisions = parsed.decisions && typeof parsed.decisions === "object" ? parsed.decisions : {};
+      state.overall = typeof parsed.overall === "string" ? parsed.overall : "";
+    }
+  } catch (e) { state = defaultState(); }
+
+  function save() {
+    try { if (store) store.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    refreshUI();
+  }
+
+  var pointCards = Array.prototype.slice.call(document.querySelectorAll('.card[data-kind="point"]'));
+  var decisionCards = Array.prototype.slice.call(document.querySelectorAll('.card[data-kind="decision"]'));
+  var overallEl = document.getElementById("overallNotes");
+  overallEl.value = state.overall;
+  overallEl.addEventListener("input", function () {
+    state.overall = overallEl.value;
+    save();
+  });
+
+  // Wire point cards
+  pointCards.forEach(function (card) {
+    var id = card.dataset.id;
+    var controls = card.querySelector(".card-controls");
+    var btns = Array.prototype.slice.call(controls.querySelectorAll(".stance-btn"));
+    var toggle = controls.querySelector(".note-toggle");
+    var wrap = card.querySelector(".note-wrap");
+    var ta = wrap.querySelector("textarea");
+
+    function getEntry() { return state.points[id] || { stance: "", note: "" }; }
+    function setEntry(next) {
+      if (!next.stance && !(next.note || "").trim()) delete state.points[id];
+      else state.points[id] = next;
+      save();
+    }
+
+    var cur = getEntry();
+    ta.value = cur.note || "";
+    if ((cur.note || "").trim()) wrap.hidden = false;
+
+    btns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var e = getEntry();
+        var s = btn.dataset.stance;
+        e.stance = e.stance === s ? "" : s;
+        if (e.stance === "question" || e.stance === "change") {
+          wrap.hidden = false;
+          ta.focus();
+        }
+        setEntry(e);
+      });
+    });
+
+    toggle.addEventListener("click", function () {
+      wrap.hidden = !wrap.hidden;
+      if (!wrap.hidden) ta.focus();
+    });
+
+    ta.addEventListener("input", function () {
+      var e = getEntry();
+      e.note = ta.value;
+      setEntry(e);
+    });
+  });
+
+  // Wire decision cards
+  decisionCards.forEach(function (card) {
+    var id = card.dataset.id;
+    var radios = Array.prototype.slice.call(card.querySelectorAll('input[type="radio"]'));
+    var toggle = card.querySelector(".note-toggle");
+    var wrap = card.querySelector(".note-wrap");
+    var ta = wrap.querySelector("textarea");
+
+    function getEntry() { return state.decisions[id] || { choice: "", note: "" }; }
+    function setEntry(next) {
+      if (!next.choice && !(next.note || "").trim()) delete state.decisions[id];
+      else state.decisions[id] = next;
+      save();
+    }
+
+    var cur = getEntry();
+    ta.value = cur.note || "";
+    if ((cur.note || "").trim()) wrap.hidden = false;
+    radios.forEach(function (r) {
+      if (r.value === cur.choice) r.checked = true;
+      r.addEventListener("change", function () {
+        var e = getEntry();
+        e.choice = r.value;
+        setEntry(e);
+      });
+    });
+
+    toggle.addEventListener("click", function () {
+      wrap.hidden = !wrap.hidden;
+      if (!wrap.hidden) ta.focus();
+    });
+
+    ta.addEventListener("input", function () {
+      var e = getEntry();
+      e.note = ta.value;
+      setEntry(e);
+    });
+  });
+
+  // Filtering
+  var activeFilter = "all";
+  var pills = Array.prototype.slice.call(document.querySelectorAll("#filterPills .pill"));
+  pills.forEach(function (pill) {
+    pill.addEventListener("click", function () {
+      activeFilter = pill.dataset.filter;
+      pills.forEach(function (p) { p.classList.toggle("active", p === pill); });
+      applyFilter();
+    });
+  });
+
+  function isAnnotated(card) {
+    var id = card.dataset.id;
+    if (card.dataset.kind === "decision") {
+      var d = state.decisions[id];
+      return !!(d && (d.choice || (d.note || "").trim()));
+    }
+    var p = state.points[id];
+    return !!(p && (p.stance || (p.note || "").trim()));
+  }
+
+  function applyFilter() {
+    var allCards = pointCards.concat(decisionCards);
+    allCards.forEach(function (card) {
+      var show = true;
+      if (activeFilter === "annotated") show = isAnnotated(card);
+      else if (activeFilter !== "all") show = card.dataset.cat === activeFilter;
+      card.classList.toggle("is-hidden", !show);
+    });
+  }
+
+  function refreshUI() {
+    var secCounts = {};
+    var pointCount = 0;
+    var decCount = 0;
+
+    pointCards.forEach(function (card) {
+      var id = card.dataset.id;
+      var e = state.points[id] || { stance: "", note: "" };
+      var ann = !!(e.stance || (e.note || "").trim());
+      card.classList.toggle("annotated", ann);
+      if (ann) {
+        pointCount += 1;
+        secCounts[card.dataset.sec] = (secCounts[card.dataset.sec] || 0) + 1;
+      }
+      card.querySelectorAll(".stance-btn").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.dataset.stance === e.stance));
+      });
+    });
+
+    decisionCards.forEach(function (card) {
+      var id = card.dataset.id;
+      var e = state.decisions[id] || { choice: "", note: "" };
+      var ann = !!(e.choice || (e.note || "").trim());
+      card.classList.toggle("annotated", ann);
+      if (ann) {
+        decCount += 1;
+        secCounts[card.dataset.sec] = (secCounts[card.dataset.sec] || 0) + 1;
+      }
+      card.querySelectorAll(".opt-label").forEach(function (lbl) {
+        var r = lbl.querySelector('input[type="radio"]');
+        lbl.classList.toggle("selected", r.value === e.choice);
+      });
+    });
+
+    document.querySelectorAll("[data-sec-count]").forEach(function (el) {
+      var n = secCounts[el.dataset.secCount] || 0;
+      el.textContent = String(n);
+      el.classList.toggle("has-notes", n > 0);
+    });
+
+    var overallMark = (state.overall || "").trim() ? " · overall note" : "";
+    document.getElementById("dockCounts").textContent =
+      pointCount + (pointCount === 1 ? " point" : " points") + " · " +
+      decCount + (decCount === 1 ? " decision" : " decisions") + overallMark;
+
+    applyFilter();
+  }
+
+  // Markdown export
+  function buildMarkdown() {
+    var out = ["# Feedback on " + (meta.title || "Brief"), ""];
+    var any = false;
+
+    pointCards.forEach(function (card) {
+      var e = state.points[card.dataset.id];
+      if (!e || (!e.stance && !(e.note || "").trim())) return;
+      any = true;
+      var stance = e.stance ? " [" + e.stance.toUpperCase() + "]" : "";
+      out.push("- **" + card.dataset.title + "** (`" + card.dataset.id + "`)" + stance);
+      if ((e.note || "").trim()) out.push("  - Note: " + e.note.trim().replace(/\n/g, "\n    "));
+    });
+
+    var decLines = [];
+    decisionCards.forEach(function (card) {
+      var e = state.decisions[card.dataset.id];
+      if (!e || (!e.choice && !(e.note || "").trim())) return;
+      any = true;
+      var chosenLabel = e.choice;
+      if (e.choice) {
+        var radio = card.querySelector('input[type="radio"][value="' + e.choice.replace(/"/g, '\\"') + '"]');
+        if (radio && radio.dataset.label) chosenLabel = radio.dataset.label + " (`" + e.choice + "`)";
+      }
+      decLines.push("- **" + card.dataset.title + "** (`" + card.dataset.id + "`): " + (chosenLabel || "(no option picked)"));
+      if ((e.note || "").trim()) decLines.push("  - Note: " + e.note.trim().replace(/\n/g, "\n    "));
+    });
+
+    if (decLines.length) {
+      out.push("", "## Decisions", "");
+      Array.prototype.push.apply(out, decLines);
+    }
+
+    if ((state.overall || "").trim()) {
+      any = true;
+      out.push("", "## Overall Notes", "", state.overall.trim());
+    }
+
+    if (!any) out.push("_No points annotated yet._");
+    return out.join("\n") + "\n";
+  }
+
+  // Modal & copy
+  var modal = document.getElementById("promptModal");
+  var promptOutput = document.getElementById("promptOutput");
+  var copyBtn = document.getElementById("copyPromptBtn");
+
+  document.getElementById("buildPromptBtn").addEventListener("click", function () {
+    promptOutput.value = buildMarkdown();
+    modal.hidden = false;
+    promptOutput.focus();
+  });
+  document.getElementById("closeModalBtn").addEventListener("click", function () { modal.hidden = true; });
+  modal.addEventListener("click", function (ev) { if (ev.target === modal) modal.hidden = true; });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && !modal.hidden) modal.hidden = true; });
+
+  function fallbackCopy(text, done) {
+    promptOutput.focus();
+    promptOutput.select();
+    try {
+      if (document.execCommand("copy")) { done(); return; }
+    } catch (e) {}
+    window.prompt("Copy the prompt:", text);
+  }
+  copyBtn.addEventListener("click", function () {
+    var text = promptOutput.value;
+    var old = copyBtn.textContent;
+    function done() {
+      copyBtn.textContent = "Copied!";
+      setTimeout(function () { copyBtn.textContent = old; }, 1400);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text, done); });
+    } else {
+      fallbackCopy(text, done);
+    }
+  });
+
+  // Reset
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    if (!window.confirm("Reset all stances, decisions, and notes on this brief?")) return;
+    state = defaultState();
+    overallEl.value = "";
+    pointCards.forEach(function (card) {
+      card.querySelector("textarea").value = "";
+      card.querySelector(".note-wrap").hidden = true;
+    });
+    decisionCards.forEach(function (card) {
+      card.querySelectorAll('input[type="radio"]').forEach(function (r) { r.checked = false; });
+      card.querySelector("textarea").value = "";
+      card.querySelector(".note-wrap").hidden = true;
+    });
+    save();
+  });
+
+  refreshUI();
+})();
+</script>
+</body>
+</html>

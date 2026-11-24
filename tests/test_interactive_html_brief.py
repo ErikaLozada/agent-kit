@@ -18,6 +18,7 @@ KIT = Path(__file__).resolve().parent.parent
 SKILL_DIR = KIT / "skills" / "interactive-html-brief"
 SERVER_SCRIPT = SKILL_DIR / "scripts" / "agent-briefs-server"
 PUBLISH_SCRIPT = SKILL_DIR / "scripts" / "publish-brief"
+BUILD_SCRIPT = SKILL_DIR / "scripts" / "build_brief.py"
 
 
 def free_port() -> int:
@@ -230,6 +231,146 @@ class InteractiveHtmlBriefTests(unittest.TestCase):
             self.assertIsNone(ts_ip_re.search(text), f"Tailscale IP leaked in {path}")
             self.assertIsNone(personal_re.search(text), f"Personal path/domain leaked in {path}")
             self.assertIsNone(real_ts_net_re.search(text), f"Real tailnet domain leaked in {path}")
+
+    def test_build_brief_renders_valid_html_and_publishes(self):
+        sample = {
+            "title": "Architecture Review · Auth",
+            "subtitle": "Review of session storage and token rotation.",
+            "storageKey": "brief-auth-test",
+            "meta": ["2026-11-24", "1 point", "1 decision"],
+            "footer": "Generated in test.",
+            "sections": [
+                {
+                    "id": "overview",
+                    "title": "Overview",
+                    "lede": "Summary metrics and comparison.",
+                    "blocks": [
+                        {"type": "prose", "paragraphs": ["First paragraph."]},
+                        {"type": "list", "ordered": True, "items": ["Step 1", "Step 2"]},
+                        {"type": "kpis", "items": [{"label": "Endpoints", "value": 12, "unit": "routes"}]},
+                        {
+                            "type": "table",
+                            "columns": [{"label": "Store"}, {"label": "Latency ms", "num": True}],
+                            "rows": [["Redis", 2], ["Postgres", 14]],
+                        },
+                        {"type": "callout", "label": "Takeaway", "text": "Rotate refresh tokens.", "tone": "good"},
+                        {"type": "diagram", "html": '<div class="fd-embed">diagram</div>'},
+                    ],
+                    "cards": [
+                        {
+                            "id": "c-ttl",
+                            "title": "Shorten refresh token TTL",
+                            "category": "Security",
+                            "tone": "warn",
+                            "body": "Tokens currently live 90 days.",
+                            "bullets": ["Cap at 14 days", "Rotate on use"],
+                            "code": "if (ttl > 14) { rotate(); }",
+                            "callout": {"label": "Fix", "text": "Update config.", "tone": "good"},
+                        }
+                    ],
+                    "decisions": [
+                        {
+                            "id": "d-store",
+                            "title": "Session store",
+                            "body": "Pick the backing store.",
+                            "options": [
+                                {"value": "redis", "label": "Redis", "desc": "Fast revocation", "recommended": True},
+                                {"value": "pg", "label": "Postgres", "desc": "Fewer services"},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        src = self.root / "brief.json"
+        out = self.root / "brief.html"
+        src.write_text(json.dumps(sample), encoding="utf-8")
+
+        r = subprocess.run([sys.executable, "-I", str(BUILD_SCRIPT), str(src), str(out)], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        page = out.read_text(encoding="utf-8")
+        for marker in ("__BRIEF_", "/*__"):
+            self.assertNotIn(marker, page)
+        self.assertIn('data-brief-chrome="1"', page)
+        self.assertIn("Shorten refresh token TTL", page)
+        self.assertIn('data-filter="security"', page)
+        self.assertIn('data-kind="decision"', page)
+        self.assertIn("Build &amp; Copy Single Prompt", page)
+        self.assertIn("agent-briefs-theme", page)
+        self.assertIn("brief-auth-test", page)
+
+        # Validate inline JS syntax with node --check when node is available
+        if subprocess.run(["which", "node"], capture_output=True).returncode == 0:
+            scripts = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)
+            self.assertEqual(len(scripts), 1)
+            js_file = self.root / "brief.js"
+            js_file.write_text(scripts[0], encoding="utf-8")
+            chk = subprocess.run(["node", "--check", str(js_file)], capture_output=True, text=True)
+            self.assertEqual(chk.returncode, 0, chk.stderr)
+
+        # Build from stdin and --publish directly
+        r_pub = subprocess.run(
+            [sys.executable, "-I", str(BUILD_SCRIPT), "-", "--publish", "--slug", "stdin-auth"],
+            input=json.dumps(sample),
+            env=self.env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(r_pub.returncode, 0, r_pub.stderr)
+        url = r_pub.stdout.strip()
+        self.assertTrue(url.startswith(f"https://{self.remote_host}/"))
+        pub_name = url.rsplit("/", 1)[-1]
+        self.assertTrue(pub_name.endswith("-stdin-auth.html"))
+        status, _, served = self.request("GET", f"/{pub_name}")
+        self.assertEqual(status, 200)
+        self.assertNotIn(b"abChromeThemeBtn", served)
+
+    def test_build_brief_rejects_bad_data_and_escapes_script_close(self):
+        bad = {
+            "title": "Bad",
+            "sections": [
+                {
+                    "id": "dup",
+                    "title": "S1",
+                    "blocks": [{"type": "table", "columns": [{"label": "A"}], "rows": [[1, 2]]}],
+                    "cards": [{"id": "dup", "title": "C1", "tone": "bogus"}],
+                    "decisions": [{"id": "d1", "title": "D1", "options": []}],
+                }
+            ],
+        }
+        r = subprocess.run(
+            [sys.executable, "-I", str(BUILD_SCRIPT), "-", str(self.root / "bad.html")],
+            input=json.dumps(bad),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(r.returncode, 1)
+        for expected in ("duplicate id 'dup'", "2 cells, 1 columns", "tone must be one of", "'options' must be a non-empty list"):
+            self.assertIn(expected, r.stderr)
+
+        tricky = {
+            "title": "</script><b>Title",
+            "storageKey": "</script>k",
+            "sections": [{"id": "s1", "title": "S1", "blocks": [{"type": "prose", "paragraphs": ["ok"]}]}],
+        }
+        out = self.root / "tricky.html"
+        r2 = subprocess.run(
+            [sys.executable, "-I", str(BUILD_SCRIPT), "-", str(out)],
+            input=json.dumps(tricky),
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+        page = out.read_text(encoding="utf-8")
+        meta_block = page.split('id="brief-meta">', 1)[1].split("</script>", 1)[0]
+        self.assertIn("<\\/script>", meta_block)
+
+    def test_skill_md_documents_builder_and_trigger_threshold(self):
+        text = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("build_brief.py", text)
+        self.assertIn("--publish", text)
+        self.assertIn("When to use", text)
+        self.assertIn("Reply directly in chat", text)
 
 
 if __name__ == "__main__":

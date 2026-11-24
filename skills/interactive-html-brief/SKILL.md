@@ -1,29 +1,49 @@
 ---
 name: interactive-html-brief
 description: >-
-  Use whenever presenting a large chunk of structured text to the user (reviews,
-  plans, architecture proposals, audits, multi-option comparisons, or long
-  reports) so the user can read comfortably in a browser page styled with the
-  Fern & Stone palette, leave notes or questions on any point, and copy all
-  feedback back as a single prompt.
+  Use for long, multi-section structured outputs (reviews, plans, architecture
+  proposals, audits, multi-option comparisons, or long reports — roughly 3+
+  sections or 40+ lines) where browser reading, point-by-point annotation, or
+  decision picking adds value. Builds a self-contained Fern & Stone HTML page
+  from compact JSON so the user can annotate and copy feedback back as one prompt.
 ---
 
 # Interactive HTML Brief
 
-Turn long structured output (reviews, plans, audits, comparisons) into one self-contained HTML page. The user reads it in a browser, annotates any point, and copies all their feedback back as a single prompt.
+Turn long, multi-section structured output (reviews, plans, audits, comparisons) into one self-contained HTML page. The user reads it in a browser, annotates any point, picks decisions, and copies all their feedback back as a single prompt.
 
 Machine setup, restarting the server and troubleshooting are in this folder's `README.md`.
 
-## Publish
+## When to use (and when not to)
 
-1. Write the page as one `.html` file with no external files, fonts or CDNs.
-2. If `node` is available, check the script: copy the inline `<script>` into a temp `.js` file and run `node --check` on it.
-3. Publish:
-   ```sh
-   publish-brief /path/to/brief.html [optional-slug]
-   ```
-   This copies the page into `~/agent-briefs/` as `YYYY-MM-DD-<slug>.html` and prints its URL.
-4. Reply in 2–4 lines with that URL (add the index URL from `publish-brief --url` if useful). Never give only a `file://` path: the user's other devices can't open it.
+- **Use a brief** for long, multi-section outputs (roughly 3+ sections or 40+ lines) where structured reading and point-by-point annotation or decision picking add real value: architecture proposals, deep code/security audits, multi-option trade-off comparisons, multi-phase plans, or long review reports.
+- **Reply directly in chat** for short answers, single-section summaries, quick status updates, simple checklists, small diffs/code snippets, or yes/no questions. Do not build a brief when a few paragraphs in chat are faster to read and answer.
+
+## Build & Publish (default workflow)
+
+Write a compact JSON data file following `references/data-schema.md` instead of hand-coding HTML/CSS/JS, then render and publish it with `scripts/build_brief.py` (which uses `template/brief.html`, validates IDs/types/table widths, and keeps Fern & Stone styling and JS deterministic):
+
+```sh
+BRIEF_SKILL="$(cd -P <this skill's folder> && pwd)"
+
+# Build to a file and publish in one step (prints the clickable URL):
+python3 -I "$BRIEF_SKILL/scripts/build_brief.py" /tmp/review.json --publish --slug auth-review
+
+# Or pipe JSON via stdin without creating a temp file:
+python3 -I "$BRIEF_SKILL/scripts/build_brief.py" - --publish --slug auth-review <<'EOF'
+{ "title": "Auth Review", "sections": [ ... ] }
+EOF
+
+# Or write a local .html file (optionally also --publish):
+python3 -I "$BRIEF_SKILL/scripts/build_brief.py" /tmp/review.json /tmp/review.html [--publish --slug auth-review]
+```
+
+Then reply in chat in 2–4 lines with the printed URL (add the index URL from `publish-brief --url` if useful). Never give only a `file://` path: the user's other devices can't open it.
+
+If you ever hand-author a custom `.html` page instead of using `build_brief.py`:
+1. Write it as one `.html` file with no external files, fonts or CDNs.
+2. If `node` is available, check the inline `<script>` with `node --check`.
+3. Publish with `publish-brief /path/to/brief.html [optional-slug]`.
 
 Rules:
 - Don't save briefs in the project repo unless the user asks.
@@ -52,7 +72,7 @@ When a brief explains an architecture, a multi-stage pipeline or a feature chang
 python3 ~/.agents/skills/feature-diagram/scripts/render_diagram.py scripts/diagrams.py --embed-slug <slug>
 ```
 
-Place the returned `<div class="fd-embed">` block in the section (or call `render_embed(spec)` from `render_diagram.py`). It uses the same theme and works within the page's security policy.
+Place the returned `<div class="fd-embed">` block in a `diagram` block or card `diagram` field (or call `render_embed(spec)` from `render_diagram.py`). It uses the same theme and works within the page's security policy.
 
 ## Theme: Fern & Stone
 

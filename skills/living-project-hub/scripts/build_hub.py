@@ -25,6 +25,8 @@ import json
 import os
 import re
 import subprocess
+import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -2559,6 +2561,62 @@ def update_registry(registry_path: Path, slug: str, name: str, root: Path, remov
         pass
 
 
+def append_execution_log(log_path: Path, raw_arg: str) -> list[dict]:
+    """Parse JSON from raw_arg (or stdin if '-') and atomically append to execution-log.json."""
+    raw = sys.stdin.read() if raw_arg == "-" else raw_arg
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--append-log expects valid JSON: {exc}") from exc
+
+    if isinstance(payload, dict):
+        new_entries = [payload]
+    elif isinstance(payload, list) and all(isinstance(item, dict) for item in payload):
+        new_entries = payload
+    else:
+        raise ValueError("--append-log JSON must be an object or a list of objects")
+
+    if log_path.is_file():
+        try:
+            existing = json.loads(log_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"existing {log_path} is not valid JSON: {exc}") from exc
+        if not isinstance(existing, list):
+            raise ValueError(f"existing {log_path} must contain a JSON array")
+    else:
+        existing = []
+
+    used_ids = {str(item.get("id")) for item in existing if isinstance(item, dict) and item.get("id")}
+    now_str = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
+    for entry in new_entries:
+        item = dict(entry)
+        if not item.get("id"):
+            next_num = len(existing) + 1
+            while f"step-{next_num:03d}" in used_ids:
+                next_num += 1
+            item["id"] = f"step-{next_num:03d}"
+            used_ids.add(item["id"])
+        else:
+            used_ids.add(str(item["id"]))
+        if not item.get("timestamp"):
+            item["timestamp"] = now_str
+        existing.append(item)
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=".exec-log-", suffix=".tmp", dir=str(log_path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(existing, indent=2, ensure_ascii=False) + "\n")
+        os.replace(tmp_name, log_path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+    return existing
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build the Living Project & Learning Hub HTML page")
     parser.add_argument("--root", default=None, help="Repository root directory (default: auto-detect git root or cwd)")
@@ -2570,6 +2628,11 @@ def main():
     parser.add_argument("--registry", default=None, help="Path to multi-project registry JSON (default: ~/.config/agent-hub/projects.json)")
     parser.add_argument("--register", action="store_true", help="Register this project in the unified multi-project hub server and print its URL")
     parser.add_argument("--unregister", action="store_true", help="Remove this project from the unified multi-project hub registry and exit")
+    parser.add_argument(
+        "--append-log",
+        default=None,
+        help="Append a JSON log entry (or array of entries) to .scratch/execution-log.json before rebuilding; pass '-' to read JSON from stdin",
+    )
     parser.add_argument(
         "--snapshot",
         default=None,
@@ -2592,9 +2655,16 @@ def main():
     config = load_json_file(scratch_dir / "hub-config.json", {})
     if not isinstance(config, dict):
         config = {}
-    exec_log = load_json_file(scratch_dir / "execution-log.json", [])
-    if not isinstance(exec_log, list):
-        exec_log = []
+    if args.append_log is not None:
+        try:
+            exec_log = append_execution_log(scratch_dir / "execution-log.json", args.append_log)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1)
+    else:
+        exec_log = load_json_file(scratch_dir / "execution-log.json", [])
+        if not isinstance(exec_log, list):
+            exec_log = []
     docs = discover_documents(root)
 
     if args.snapshot:

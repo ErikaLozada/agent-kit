@@ -4,6 +4,7 @@ from pathlib import Path
 
 KIT = Path(__file__).resolve().parent.parent
 HUB_SERVER = KIT / "skills" / "living-project-hub" / "scripts" / "hub_server.py"
+BUILD_HUB = KIT / "skills" / "living-project-hub" / "scripts" / "build_hub.py"
 
 
 class OutdatedHubBuildTests(unittest.TestCase):
@@ -63,6 +64,68 @@ class OutdatedHubBuildTests(unittest.TestCase):
         status, body = self.get("/")
         self.assertEqual(status, 200)
         self.assertIn(b"Outdated build: run build-project-hub --register", body)
+
+
+class BuildHubAppendLogTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name)
+        (self.repo / "README.md").write_text("# Demo Repo\n\nA sample project.\n", encoding="utf-8")
+
+    def run_builder(self, *args, stdin_text=None):
+        return subprocess.run(
+            [sys.executable, "-I", str(BUILD_HUB), "--root", str(self.repo), *args],
+            input=stdin_text,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_append_log_json_string_and_stdin_rebuilds_hub(self):
+        # 1. Append single object via CLI string (auto-generates id and timestamp)
+        entry1 = {"title": "Init repo", "tool": "git", "command": "git init", "result": "ok", "learning": "Keep it clean."}
+        r1 = self.run_builder("--append-log", json.dumps(entry1))
+        self.assertEqual(r1.returncode, 0, r1.stderr)
+
+        log_file = self.repo / ".scratch" / "execution-log.json"
+        hub_file = self.repo / ".scratch" / "project-hub.html"
+        self.assertTrue(log_file.is_file())
+        self.assertTrue(hub_file.is_file())
+
+        entries = json.loads(log_file.read_text(encoding="utf-8"))
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["id"], "step-001")
+        self.assertTrue(entries[0]["timestamp"])
+        self.assertEqual(entries[0]["title"], "Init repo")
+        self.assertIn("Init repo", hub_file.read_text(encoding="utf-8"))
+
+        # 2. Append array of entries via stdin ('-')
+        batch = [
+            {"id": "custom-2", "title": "Run tests", "tool": "pytest", "result": "pass"},
+            {"title": "Deploy", "tool": "make", "result": "live"},
+        ]
+        r2 = self.run_builder("--append-log", "-", stdin_text=json.dumps(batch))
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+
+        entries = json.loads(log_file.read_text(encoding="utf-8"))
+        self.assertEqual(len(entries), 3)
+        self.assertEqual([e["title"] for e in entries], ["Init repo", "Run tests", "Deploy"])
+        self.assertEqual(entries[1]["id"], "custom-2")
+        self.assertEqual(entries[2]["id"], "step-003")
+        hub_html = hub_file.read_text(encoding="utf-8")
+        self.assertIn("Run tests", hub_html)
+        self.assertIn("Deploy", hub_html)
+
+    def test_append_log_rejects_invalid_json_without_clobbering(self):
+        log_file = self.repo / ".scratch" / "execution-log.json"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        original = [{"id": "keep-1", "title": "Existing"}]
+        log_file.write_text(json.dumps(original), encoding="utf-8")
+
+        for bad in ("{not json", '"just a string"', "[1, 2, 3]"):
+            r = self.run_builder("--append-log", bad)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertEqual(json.loads(log_file.read_text(encoding="utf-8")), original)
 
 
 if __name__ == "__main__":
