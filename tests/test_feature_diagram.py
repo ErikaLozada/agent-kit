@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -212,6 +213,46 @@ class FeatureDiagramTests(unittest.TestCase):
         )
         self.assertIn('class="fd-embed"', emb.stdout)
         self.assertIn("fdDrawAll", emb.stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "node runs the wire-drawing script")
+    def test_wires_enter_the_middle_of_one_arrowhead_per_target(self):
+        # a and b (in a tray) both point at z, far above/below it; z points at b to check the tray edge
+        harness = render_diagram.DRAW_JS + """
+        var rects={a:[0,0,100,20],b:[10,200,90,220],tray:[0,180,100,230],z:[160,100,260,120],w:[160,140,260,160],q:[-200,0,-100,20]};
+        function rect(k){var r=rects[k];return{left:r[0],top:r[1],right:r[2],bottom:r[3],width:r[2]-r[0],height:r[3]-r[1]};}
+        function node(k){return{getBoundingClientRect:function(){return rect(k);},
+          closest:function(){return k==='b'?{getBoundingClientRect:function(){return rect('tray');}}:null;}};}
+        var svg={innerHTML:'',setAttribute:function(){}};
+        global.document={documentElement:{}};
+        global.getComputedStyle=function(){return{display:'block',getPropertyValue:function(){return'';}};};
+        rects.stage=[0,0,400,300];
+        var stage={dataset:{prefix:'p-',edges:JSON.stringify([['a','z','solid','accent'],['b','z','dash'],['q','b','solid'],['z','w','dash','fail']])},
+          getBoundingClientRect:function(){return rect('stage');},
+          querySelector:function(s){if(s==='svg.fd-wires')return svg;return node(s.match(/"(.*)"/)[1]);}};
+        fdDrawStage(stage);console.log(svg.innerHTML);
+        """
+        out = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True).stdout
+        heads = re.findall(r'<path class="fd-head" d="M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)z" fill="([^"]+)"', out)
+        self.assertEqual(len(heads), 3, "one head per target")
+        by_tip = {float(h[2]): h for h in heads}
+        z_head, b_head = by_tip[159.0], by_tip[-1.0]  # 1 px before the card, and before the tray's edge (not the card inside it)
+        for head, middle in ((z_head, 110.0), (b_head, 210.0)):
+            self.assertEqual((float(head[1]) + float(head[5])) / 2, middle)
+            self.assertEqual(float(head[3]), middle)
+        self.assertEqual(z_head[6], "#1d6a44", "the strongest tone reaching a target colours its head")
+        # a wire to a card below in the same column drops straight down from the middle of the one above
+        w_head = by_tip[210.0]
+        self.assertEqual((float(w_head[0]) + float(w_head[4])) / 2, 210.0)
+        self.assertEqual(float(w_head[3]), 139.0)
+        self.assertIn('d="M210,120 L210,131"', out)
+        # every wire finishes with a solid, level run at the head's middle
+        runs = re.findall(r'<path class="fd-lead" d="M([-\d.]+),([-\d.]+) L([-\d.]+),([-\d.]+)"([^>]*)>', out)
+        self.assertEqual(len(runs), 3)
+        for x1, y1, x2, y2, rest in runs:
+            self.assertEqual(y1, y2)
+            self.assertIn(float(y1), (110.0, 210.0))
+            self.assertGreater(float(x2), float(x1))
+            self.assertNotIn("dasharray", rest)
 
     def test_template_make_diagram_missing_skill_and_happy_path(self):
         tmp = Path(tempfile.mkdtemp())

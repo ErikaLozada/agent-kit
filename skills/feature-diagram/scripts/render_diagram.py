@@ -125,17 +125,17 @@ b,h1,h2,h3,th{font-weight:600}
 .fd-kpis{display:flex;flex:none}
 .fd-kpi{padding:0 14px;border-left:1px solid var(--border)}.fd-kpi:first-child{border-left:0}
 .fd-kpi b{display:block;font-size:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
-.fd-phases{display:grid;column-gap:40px;margin:22px 0 6px}
+.fd-phases{display:grid;column-gap:56px;margin:22px 0 6px}
 .fd-phases div{display:flex;align-items:center;gap:10px}
 .fd-phases div:before,.fd-phases div:after{content:"";flex:1;height:1px;background:var(--border)}
 .fd-phases .accent{color:var(--fern)}.fd-phases .accent:before,.fd-phases .accent:after{background:var(--fern);opacity:.5}
-.fd-heads,.fd-stage{display:grid;column-gap:40px}
+.fd-heads,.fd-stage{display:grid;column-gap:56px}
 .fd-heads{text-align:center;margin-bottom:4px}
 .fd-heads b{display:block;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text)}
 .fd-heads .n{color:var(--fern)}
 .fd-stage{position:relative;align-items:center;padding:20px 0}
 svg.fd-wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
-.fd-col{display:flex;flex-direction:column;gap:14px;position:relative;z-index:1;min-width:0}
+.fd-col{display:flex;flex-direction:column;gap:24px;position:relative;z-index:1;min-width:0}
 .fd-card{background:var(--panel);border:1px solid var(--input);border-radius:8px;padding:12px 14px}
 .fd-card h3{font-size:16px;margin:2px 0 4px}
 .fd-card p{margin:0;color:var(--sub);font-size:12.5px}
@@ -185,24 +185,37 @@ function fdDrawStage(stage){
     accent:(cs.getPropertyValue('--fd-fern')||cs.getPropertyValue('--fern')||'#1d6a44').trim(),
     fail:(cs.getPropertyValue('--fd-warn')||cs.getPropertyValue('--warn')||'#9c5520').trim()
   };
-  var s=stage.getBoundingClientRect(),edges=JSON.parse(stage.dataset.edges||'[]'),pfx=stage.dataset.prefix||'';
+  var s=stage.getBoundingClientRect(),edges=JSON.parse(stage.dataset.edges||'[]');
   function box(id){
     var el=stage.querySelector('[data-node-id="'+id+'"]');
     if(!el)return null;
-    var e=el.getBoundingClientRect();
-    return{l:e.left-s.left,r:e.right-s.left,cy:(e.top+e.bottom)/2-s.top};
+    var e=el.getBoundingClientRect(),tray=el.closest('.fd-tray'),o=tray?tray.getBoundingClientRect():e;
+    return{l:o.left-s.left,r:o.right-s.left,t:e.top-s.top,b:e.bottom-s.top,cx:(e.left+e.right)/2-s.left,cy:(e.top+e.bottom)/2-s.top};
   }
   svg.setAttribute('viewBox','0 0 '+s.width+' '+s.height);
-  var h='<defs>';
-  for(var k in c){
-    h+='<marker id="m-'+pfx+k+'" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="'+c[k]+'"/></marker>';
-  }
-  h+='</defs>';
+  // Each wire bends, then runs level into the middle of its arrowhead; a target gets one head per side, in its
+  // strongest tone. Cards in the same column are joined by a straight vertical wire.
+  var HEAD=9,LEAD=8,rank={plain:0,accent:1,fail:2},heads={},h='';
+  function head(key,tone,pts){if(!heads[key]||rank[tone]>rank[heads[key].tone])heads[key]={pts:pts,tone:tone};}
   edges.forEach(function(e){
     var a=box(e[0]),z=box(e[1]);
     if(!a||!z)return;
-    var x1=a.r,y1=a.cy,x2=z.l-2,y2=z.cy,m=(x1+x2)/2,tone=e[3]||'plain';
-    h+='<path d="M'+x1+','+y1+' C'+m+','+y1+' '+m+','+y2+' '+x2+','+y2+'" fill="none" stroke="'+c[tone]+'" stroke-width="'+(tone==='plain'?1.2:1.7)+'"'+(e[2]==='dash'?' stroke-dasharray="4 4"':'')+' marker-end="url(#m-'+pfx+tone+')"/>';
+    var tone=e[3]||'plain';
+    var line=' fill="none" stroke="'+c[tone]+'" stroke-width="'+(tone==='plain'?1.2:1.7)+'"';
+    if(Math.abs(a.l-z.l)<2){
+      var down=z.cy>a.cy,k=down?1:-1,end=down?z.t-1:z.b+1,b0=end-k*HEAD;
+      h+='<path class="fd-wire" d="M'+a.cx+','+(down?a.b:a.t)+' L'+a.cx+','+(b0+k)+'"'+line+(e[2]==='dash'?' stroke-dasharray="4 4"':'')+'/>';
+      head(e[1]+(down?'-top':'-bottom'),tone,[[a.cx-HEAD/2,b0],[a.cx,end],[a.cx+HEAD/2,b0]]);
+      return;
+    }
+    var tip=z.l-1,base=tip-HEAD,bend=base-LEAD,m=(a.r+bend)/2,y=z.cy;
+    h+='<path class="fd-wire" d="M'+a.r+','+a.cy+' C'+m+','+a.cy+' '+m+','+y+' '+bend+','+y+'"'+line+(e[2]==='dash'?' stroke-dasharray="4 4"':'')+'/>';
+    h+='<path class="fd-lead" d="M'+bend+','+y+' L'+(base+1)+','+y+'"'+line+'/>';
+    head(e[1],tone,[[base,y-HEAD/2],[tip,y],[base,y+HEAD/2]]);
+  });
+  Object.keys(heads).forEach(function(k){
+    var d=heads[k];
+    h+='<path class="fd-head" d="M'+d.pts.join(' L')+'z" fill="'+c[d.tone]+'"/>';
   });
   svg.innerHTML=h;
 }
