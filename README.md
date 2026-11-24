@@ -6,7 +6,7 @@ It works with Claude Code, Codex, pi, Gemini / Antigravity, Hermes, or any CLI v
 - a **tiny per-project template** (`template/`): lean `AGENTS.md` (< 3 KB), pre-commit hooks, explicit test outcomes, guarded deploys, and review/worktree scripts;
 - **global skills** (`skills/`): linked once per machine (`install.sh --link-skills`) so improvements reach every project without copying heavy tooling into every repo.
 
-Extracted from real multi-agent builds — including [Crate Digger](https://github.com/ErikaLozada/crate-digger) and [reel-kit](https://github.com/ErikaLozada/reel-kit) — turning recurring agent mistakes into deterministic code guards or concise rules.
+Extracted from real multi-agent builds — including Crate Digger and [reel-kit](https://github.com/ErikaLozada/reel-kit) — turning recurring agent mistakes into deterministic code guards or concise rules.
 
 ---
 
