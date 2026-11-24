@@ -43,7 +43,7 @@ TODO: choices to make without asking.
 
 ## Conventions
 
-- Match surrounding code. Stage explicit paths (avoid blind `git add -A`). Small commits explaining why, with `Co-Authored-By`.
+- Match surrounding code. Stage explicit paths (avoid blind `git add -A`). Small commits explaining why, with `Co-Authored-By`. Gate a commit on a check's exit code (`check && git commit`), never on output printed in the same command.
 - Test failure/edge cases (partial failures, retries, stale state); re-check the failing scenario after a fix.
 - Reuse existing helpers instead of duplicating logic.
 - Verify packages, APIs, and platform products are current (not deprecated) before recommending or adopting them.
