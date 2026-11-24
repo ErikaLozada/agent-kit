@@ -125,11 +125,11 @@ b,h1,h2,h3,th{font-weight:600}
 .fd-kpis{display:flex;flex:none}
 .fd-kpi{padding:0 14px;border-left:1px solid var(--border)}.fd-kpi:first-child{border-left:0}
 .fd-kpi b{display:block;font-size:20px;white-space:nowrap;font-variant-numeric:tabular-nums}
-.fd-phases{display:grid;column-gap:56px;margin:22px 0 6px}
+.fd-phases{display:grid;column-gap:40px;margin:22px 0 6px}
 .fd-phases div{display:flex;align-items:center;gap:10px}
 .fd-phases div:before,.fd-phases div:after{content:"";flex:1;height:1px;background:var(--border)}
 .fd-phases .accent{color:var(--fern)}.fd-phases .accent:before,.fd-phases .accent:after{background:var(--fern);opacity:.5}
-.fd-heads,.fd-stage{display:grid;column-gap:56px}
+.fd-heads,.fd-stage{display:grid;column-gap:40px}
 .fd-heads{text-align:center;margin-bottom:4px}
 .fd-heads b{display:block;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text)}
 .fd-heads .n{color:var(--fern)}
