@@ -135,10 +135,11 @@ A project's `scripts/diagrams.py` exposes `get_specs()` (or `specs()` or `SPECS`
 make diagram
 
 # Or run the renderer directly on a specs module or JSON file
-python3 ~/.agents/skills/feature-diagram/scripts/render_diagram.py scripts/diagrams.py --out docs/diagrams
+FD_SKILL="$(cd -P <this skill's folder> && pwd)"
+python3 "$FD_SKILL/scripts/render_diagram.py" scripts/diagrams.py --out docs/diagrams
 
 # Emit an inline embeddable HTML fragment for an interactive-html-brief
-python3 ~/.agents/skills/feature-diagram/scripts/render_diagram.py scripts/diagrams.py --embed-slug <slug>
+python3 "$FD_SKILL/scripts/render_diagram.py" scripts/diagrams.py --embed-slug <slug>
 ```
 
 ## Project Tests

@@ -382,6 +382,42 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(home, '--link-skills')))
         self.assertNotIn('added', run())                                                # a rerun changes nothing
 
+    def test_link_skills_repairs_links_to_a_moved_kit_and_reports_no_folders(self):
+        home = tempfile.mkdtemp(); self.addCleanup(subprocess.run, ['rm', '-rf', home])
+        run = lambda: self.sh('bash', os.path.join(KIT, 'install.sh'), '--link-skills', cwd=home, env={'HOME': home})
+        self.assertIn('no skills folders found', run())                                 # nothing to link into: say so
+        claude = os.path.join(home, '.claude', 'skills'); os.makedirs(claude)
+        os.symlink('/old/place/agent-kit/skills/wrap-up', os.path.join(claude, 'wrap-up'))  # the kit was moved
+        os.symlink('/old/place/elsewhere', os.path.join(claude, 'session-retro'))       # broken, but not a kit skill: kept
+        out = run()
+        kit_skills = os.path.realpath(os.path.join(KIT, 'skills'))
+        self.assertEqual(os.readlink(os.path.join(claude, 'wrap-up')), os.path.join(kit_skills, 'wrap-up'))
+        self.assertIn('relinked', out)
+        self.assertEqual(os.readlink(os.path.join(claude, 'session-retro')), '/old/place/elsewhere')
+
+    def test_install_notes_when_global_skills_are_not_linked(self):
+        home = tempfile.mkdtemp(); self.addCleanup(subprocess.run, ['rm', '-rf', home])
+        proj = os.path.join(home, 'p')
+        out = self.sh('bash', os.path.join(KIT, 'install.sh'), proj, 'P', cwd=home, env={'HOME': home})
+        self.assertIn("global skills aren't linked", out)
+        os.makedirs(os.path.join(home, '.claude', 'skills'))
+        self.sh('bash', os.path.join(KIT, 'install.sh'), '--link-skills', cwd=home, env={'HOME': home})
+        out2 = self.sh('bash', os.path.join(KIT, 'install.sh'), proj, 'P', cwd=home, env={'HOME': home})
+        self.assertNotIn("global skills aren't linked", out2)
+
+    def test_existing_claude_skills_folder_gets_project_skills(self):
+        base = os.path.dirname(self.proj); p2 = os.path.join(base, 'adopted')
+        os.makedirs(os.path.join(p2, '.claude', 'skills', 'mine'))
+        self.assertIn('missing     .claude/skills/ship-feature',
+                      self.sh('bash', os.path.join(KIT, 'install.sh'), '--check', p2, cwd=base))
+        self.sh('bash', os.path.join(KIT, 'install.sh'), p2, 'P2', cwd=base)
+        link = os.path.join(p2, '.claude', 'skills', 'ship-feature')
+        self.assertEqual(os.readlink(link), '../../.agents/skills/ship-feature')
+        self.assertTrue(os.path.isfile(os.path.join(link, 'SKILL.md')))
+        self.assertTrue(os.path.isdir(os.path.join(p2, '.claude', 'skills', 'mine')))
+        self.assertIn('ok          .claude/skills/ship-feature',
+                      self.sh('bash', os.path.join(KIT, 'install.sh'), '--check', p2, cwd=base))
+
     def test_skips_finder_metadata(self):
         kit = tempfile.mkdtemp(); self.addCleanup(subprocess.run, ['rm', '-rf', kit])
         subprocess.run(['cp', '-R', os.path.join(KIT, 'install.sh'), os.path.join(KIT, 'template'), kit], check=True)
