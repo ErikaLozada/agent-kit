@@ -55,6 +55,11 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.sh('git', 'config', 'core.hooksPath').strip(), '.githooks')
         self.assertNotIn('{{', self.read('docs/decisions.md') + self.read('agent-kit.conf'))
 
+    def test_project_name_with_sed_special_characters(self):
+        proj = os.path.join(os.path.dirname(self.proj), 'odd')
+        self.sh('bash', os.path.join(KIT, 'install.sh'), proj, r'R&D|Ops \1', cwd=os.path.dirname(proj))
+        with open(os.path.join(proj, 'AGENTS.md')) as f: self.assertEqual(f.readline(), '# R&D|Ops \\1\n')
+
     def test_agents_md_is_lean_and_harness_neutral(self):
         text = self.read('AGENTS.md')
         self.assertLessEqual(len(text.encode()), 3000)
