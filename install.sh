@@ -18,28 +18,40 @@ usage() {
 # Files under a folder, minus caches and metadata such as __pycache__/*.pyc, .DS_Store and .git.
 plain_files() { find "$1" -type f ! -name .DS_Store ! -name '*.pyc' ! -path '*/__pycache__/*' ! -path '*/.git/*' -print0; }
 
+# Each agent harness's global skills folder (plus AGENT_SKILLS_DIRS, colon-separated)
+HOMES=(
+  "$HOME/.claude/skills"
+  "$HOME/.agents/skills"
+  "$HOME/.codex/skills"
+  "$HOME/.gemini/config/skills"
+  "$HOME/.pi/agent/skills"
+  "$HOME/.hermes/skills"
+)
+if [ -n "${AGENT_SKILLS_DIRS:-}" ]; then
+  IFS=: read -r -a EXTRA_HOMES <<< "$AGENT_SKILLS_DIRS"
+  HOMES+=("${EXTRA_HOMES[@]}")
+fi
+
 if [ "${1:-}" = --link-skills ]; then
-  HOMES=(
-    "$HOME/.claude/skills"
-    "$HOME/.agents/skills"
-    "$HOME/.codex/skills"
-    "$HOME/.gemini/config/skills"
-    "$HOME/.pi/agent/skills"
-    "$HOME/.hermes/skills"
-  )
-  if [ -n "${AGENT_SKILLS_DIRS:-}" ]; then
-    IFS=: read -r -a EXTRA_HOMES <<< "$AGENT_SKILLS_DIRS"
-    HOMES+=("${EXTRA_HOMES[@]}")
-  fi
+  found=0
   for home in "${HOMES[@]}"; do
     [ -n "$home" ] && [ -d "$home" ] || continue
+    found=1
     for skill in "$ROOT"/skills/*/; do
-      skill="${skill%/}"; dst="$home/$(basename "$skill")"
+      skill="${skill%/}"; name="$(basename "$skill")"; dst="$home/$name"
       if [ -L "$dst" ] && [ "$(readlink "$dst")" = "$skill" ]; then echo "  linked   $dst (already)"
+      elif [ -L "$dst" ] && [ ! -e "$dst" ] && [[ "$(readlink "$dst")" == */skills/"$name" ]]; then
+        # A broken link to this skill in a kit that has since moved: point it here instead
+        old="$(readlink "$dst")"; ln -sfn "$skill" "$dst"; echo "  relinked $dst -> $skill (was broken: $old)"
       elif [ -e "$dst" ] || [ -L "$dst" ]; then echo "  kept     $dst (already there, not a link to this kit)"
       else ln -s "$skill" "$dst"; echo "  added    $dst -> $skill"; fi
     done
   done
+  if [ "$found" = 0 ]; then
+    echo "install.sh: no skills folders found, so nothing was linked. Checked:"
+    printf '  %s\n' "${HOMES[@]}"
+    echo "Create the folder your agent tool reads (e.g. mkdir -p ~/.claude/skills) or set AGENT_SKILLS_DIRS, then rerun."
+  fi
   exit 0
 fi
 
@@ -71,6 +83,12 @@ if [ "${1:-}" = --check ]; then
       echo "  customized  $rel"
     fi
   done < <(template_files | sort -z)
+  # Claude Code reads .claude/skills: each project skill must be reachable there
+  for skill in "$KIT"/.agents/skills/*/; do
+    name="$(basename "$skill")"
+    if [ -f "$TARGET/.claude/skills/$name/SKILL.md" ]; then echo "  ok          .claude/skills/$name"
+    else echo "  missing     .claude/skills/$name (Claude Code won't see it; rerun install.sh)"; fi
+  done
   exit 0
 fi
 
@@ -165,7 +183,16 @@ for idx in "${!RESOLVED_OVERLAYS[@]}"; do
   fi
 done
 
-if [ ! -e .claude/skills ]; then mkdir -p .claude && ln -s ../.agents/skills .claude/skills && copied+=(".claude/skills -> .agents/skills"); fi
+if [ ! -e .claude/skills ] && [ ! -L .claude/skills ]; then
+  mkdir -p .claude && ln -s ../.agents/skills .claude/skills && copied+=(".claude/skills -> .agents/skills")
+elif [ -d .claude/skills ] && [ ! -L .claude/skills ]; then
+  # The project already has its own Claude skills folder: link each project skill into it
+  for skill in .agents/skills/*/; do
+    name="$(basename "$skill")"; dst=".claude/skills/$name"
+    if [ -e "$dst" ] || [ -L "$dst" ]; then skipped+=("$dst")
+    else ln -s "../../.agents/skills/$name" "$dst" && copied+=("$dst -> .agents/skills/$name"); fi
+  done
+fi
 chmod +x scripts/*.sh .githooks/pre-commit 2>/dev/null || true
 
 # Protect existing git hooks in adopted repos instead of silently bypassing them
@@ -177,6 +204,10 @@ elif [ -z "$existing_hooks" ] && [ -e .git/hooks/pre-commit ]; then
 else
   git config core.hooksPath .githooks
 fi
+
+linked=""
+for home in "${HOMES[@]}"; do [ -n "$home" ] && [ -f "$home/ship-with-agents/SKILL.md" ] && linked=1 && break; done
+[ -n "$linked" ] || notes+=("global skills aren't linked on this machine (ship-with-agents, feature-diagram, wrap-up...): run bash $ROOT/install.sh --link-skills")
 
 echo "Agent kit installed in $PWD"
 [ ${#copied[@]} -eq 0 ] || printf '  added    %s\n' "${copied[@]}"

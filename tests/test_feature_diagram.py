@@ -134,6 +134,11 @@ def sample_spec(threshold: float = 0.75, cap_mb: int = 12) -> dict:
 
 
 class FeatureDiagramTests(unittest.TestCase):
+    def test_skills_call_the_renderer_from_their_own_folder(self):
+        """A fixed ~/.agents/skills path fails on machines without that folder (e.g. Claude Code only)."""
+        for rel in ("skills/feature-diagram/SKILL.md", "skills/interactive-html-brief/SKILL.md"):
+            self.assertNotIn("~/.agents/skills/feature-diagram", (KIT / rel).read_text(encoding="utf-8"), rel)
+
     def test_theme_tokens_match_interactive_html_brief(self):
         tokens = render_diagram.load_theme_tokens()
         brief_md = BRIEF_SKILL.read_text(encoding="utf-8").lower()

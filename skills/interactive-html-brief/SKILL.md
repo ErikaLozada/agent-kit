@@ -69,7 +69,7 @@ Rules:
 When a brief explains an architecture, a multi-stage pipeline or a feature change, embed a generated flow diagram from the `feature-diagram` skill, never a screenshot or hand-drawn SVG:
 
 ```sh
-python3 ~/.agents/skills/feature-diagram/scripts/render_diagram.py scripts/diagrams.py --embed-slug <slug>
+python3 "$BRIEF_SKILL/../feature-diagram/scripts/render_diagram.py" scripts/diagrams.py --embed-slug <slug>
 ```
 
 Place the returned `<div class="fd-embed">` block in a `diagram` block or card `diagram` field (or call `render_embed(spec)` from `render_diagram.py`). It uses the same theme and works within the page's security policy.
