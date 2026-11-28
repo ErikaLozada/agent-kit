@@ -9,6 +9,15 @@ set -e
 ROOT="$(cd -P "$(dirname "$0")" && pwd)"
 KIT="$ROOT/template"
 
+usage() {
+  echo "usage: install.sh <project folder> [\"Project Name\"] [--overlay <path-or-name>]..."
+  echo "       install.sh --link-skills"
+  echo "       install.sh --check <project folder>"
+}
+
+# Files under a folder, minus caches and metadata such as __pycache__/*.pyc, .DS_Store and .git.
+plain_files() { find "$1" -type f ! -name .DS_Store ! -name '*.pyc' ! -path '*/__pycache__/*' ! -path '*/.git/*' -print0; }
+
 if [ "${1:-}" = --link-skills ]; then
   HOMES=(
     "$HOME/.claude/skills"
@@ -41,13 +50,13 @@ template_files() {
       [ -f "$KIT/$rel" ] && [ ! -L "$KIT/$rel" ] && [ "${rel##*/}" != .DS_Store ] && printf '%s\0' "$KIT/$rel"
     done
   else
-    find "$KIT" -type f ! -name .DS_Store ! -name '*.pyc' ! -path '*/__pycache__/*' -print0
+    plain_files "$KIT"
   fi
 }
 
 if [ "${1:-}" = --check ]; then
   TARGET="${2:-}"
-  [ -n "$TARGET" ] && [ -d "$TARGET" ] || { echo "usage: install.sh --check <project folder>"; exit 1; }
+  [ -n "$TARGET" ] && [ -d "$TARGET" ] || { usage; exit 1; }
   echo "Checking $TARGET against $KIT (read-only)"
   while IFS= read -r -d '' src; do
     rel="${src#$KIT/}"
@@ -75,17 +84,14 @@ while [ $# -gt 0 ]; do
     --overlay=*)
       OVERLAYS+=("${1#*=}"); shift ;;
     -h|--help)
-      echo "usage: install.sh <project folder> [\"Project Name\"] [--overlay <path-or-name>]..."
-      echo "       install.sh --link-skills"
-      echo "       install.sh --check <project folder>"
-      exit 0 ;;
+      usage; exit 0 ;;
     *)
       POSITIONAL+=("$1"); shift ;;
   esac
 done
 
 DIR="${POSITIONAL[0]:-}"
-[ -n "$DIR" ] || { echo "usage: install.sh <project folder> [\"Project Name\"] [--overlay <path-or-name>]..."; exit 1; }
+[ -n "$DIR" ] || { usage; exit 1; }
 
 # Validate overlays before touching the target folder
 RESOLVED_OVERLAYS=()
@@ -110,12 +116,15 @@ NAME="${POSITIONAL[1]:-$(basename "$PWD")}"
 
 copied=(); skipped=(); notes=()
 TODAY="$(date +%F)"
+# Escape the sed replacement's special characters so names like "R&D|Ops" are copied as written.
+NAME_SED="$(printf '%s' "$NAME" | sed 's/[\\|&]/\\&/g')"
+render() { sed -e "s|{{PROJECT}}|$NAME_SED|g" -e "s|{{DATE}}|$TODAY|g" "$1"; }
 
 copy_template_file() {
   local src="$1" rel="$2"
   if [ -e "$rel" ] || [ -L "$rel" ]; then skipped+=("$rel"); return; fi
   mkdir -p "$(dirname "$rel")"
-  sed -e "s|{{PROJECT}}|$NAME|g" -e "s|{{DATE}}|$TODAY|g" "$src" > "$rel"
+  render "$src" > "$rel"
   [ -x "$src" ] && chmod +x "$rel"
   copied+=("$rel")
 }
@@ -134,14 +143,14 @@ for idx in "${!RESOLVED_OVERLAYS[@]}"; do
       AGENTS.append.md|.gitignore.append) continue ;;
     esac
     copy_template_file "$src" "$rel"
-  done < <(find "$ov_dir" -type f ! -name .DS_Store ! -name '*.pyc' ! -path '*/__pycache__/*' ! -path '*/.git/*' -print0 | sort -z)
+  done < <(plain_files "$ov_dir" | sort -z)
 
   if [ -f "$ov_dir/AGENTS.append.md" ] && [ -f AGENTS.md ]; then
     marker="<!-- overlay: $ov_name -->"
     if ! grep -Fq "$marker" AGENTS.md; then
       {
         printf '\n%s\n' "$marker"
-        sed -e "s|{{PROJECT}}|$NAME|g" -e "s|{{DATE}}|$TODAY|g" "$ov_dir/AGENTS.append.md"
+        render "$ov_dir/AGENTS.append.md"
       } >> AGENTS.md
       notes+=("appended overlay '$ov_name' snippet to AGENTS.md")
     fi
